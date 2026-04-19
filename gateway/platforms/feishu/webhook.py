@@ -201,6 +201,8 @@ class FeishuWebhookMixin:
             self._on_reaction_event(event_type, data)
         elif event_type == "card.action.trigger":
             self._on_card_action_trigger(data)
+        elif event_type == "drive.notice.comment_add_v1":
+            self._on_drive_comment_event(data)
         else:
             logger.debug("[Feishu] Ignoring webhook event type: %s", event_type or "unknown")
         return web.json_response({"code": 0, "msg": "ok"})
