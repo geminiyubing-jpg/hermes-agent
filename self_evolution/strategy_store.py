@@ -17,9 +17,7 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-STRATEGIES_DIR = Path.home() / ".hermes" / "self_evolution"
-STRATEGIES_FILE = STRATEGIES_DIR / "strategies.json"
-ARCHIVE_DIR = STRATEGIES_DIR / "archive"
+from self_evolution.paths import DATA_DIR as STRATEGIES_DIR, STRATEGIES_FILE, ARCHIVE_DIR
 
 
 class StrategyStore:

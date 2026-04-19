@@ -56,14 +56,14 @@ def on_tool_call(**kwargs) -> None:
             "created_at": started_at,
         })
     except Exception as exc:
-        logger.debug("telemetry insert failed: %s", exc)
+        logger.warning("telemetry insert failed: %s", exc)
 
 
 # ── on_session_end ───────────────────────────────────────────────────────
 
 def on_session_end(**kwargs) -> None:
     """Compute quality score and detect outcome signals when session ends."""
-    from self_evolution.db import insert
+    from self_evolution.db import insert, insert_many
     from self_evolution.quality_scorer import compute_score
 
     session_data = kwargs.get("session_data", {})
@@ -77,15 +77,15 @@ def on_session_end(**kwargs) -> None:
     try:
         insert("session_scores", score.to_db_row())
     except Exception as exc:
-        logger.debug("score insert failed: %s", exc)
+        logger.warning("score insert failed: %s", exc)
 
-    # Detect outcome signals
+    # Detect and batch-insert outcome signals
     signals = _detect_outcome_signals(session_data, kwargs)
-    for signal in signals:
+    if signals:
         try:
-            insert("outcome_signals", signal)
+            insert_many("outcome_signals", signals)
         except Exception as exc:
-            logger.debug("signal insert failed: %s", exc)
+            logger.warning("signal insert failed: %s", exc)
 
 
 def _detect_outcome_signals(session_data: dict, kwargs: dict) -> list:
@@ -186,7 +186,7 @@ def on_pre_llm_call(**kwargs) -> Optional[Dict[str, Any]]:
         if hints:
             return {"system_hint": hints}
     except Exception as exc:
-        logger.debug("strategy injection failed: %s", exc)
+        logger.warning("strategy injection failed: %s", exc)
 
     return None
 

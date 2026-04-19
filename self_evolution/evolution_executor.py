@@ -24,9 +24,8 @@ from self_evolution.models import Proposal, ImprovementUnit
 
 logger = logging.getLogger(__name__)
 
-STRATEGIES_DIR = Path.home() / ".hermes" / "self_evolution"
-STRATEGIES_FILE = STRATEGIES_DIR / "strategies.json"
-ARCHIVE_DIR = STRATEGIES_DIR / "archive"
+from self_evolution.paths import DATA_DIR as STRATEGIES_DIR, STRATEGIES_FILE, ARCHIVE_DIR
+from self_evolution.paths import SKILLS_DIR, MEMORIES_DIR
 
 
 class EvolutionExecutor:
@@ -114,7 +113,7 @@ class EvolutionExecutor:
         from self_evolution.strategy_store import StrategyStore
 
         store = StrategyStore()
-        skill_dir = Path.home() / ".hermes" / "skills" / "learned" / proposal.id
+        skill_dir = SKILLS_DIR / proposal.id
         skill_dir.mkdir(parents=True, exist_ok=True)
 
         skill_content = (
@@ -159,9 +158,13 @@ class EvolutionExecutor:
         store.save(current)
         logger.info("Updated strategies to version %d", version)
 
+        # Invalidate injector cache so new strategy takes effect immediately
+        from self_evolution.strategy_injector import invalidate_cache
+        invalidate_cache()
+
     def _update_memory(self, proposal: Proposal):
         """Update PERFORMANCE.md via the memory system."""
-        perf_path = Path.home() / ".hermes" / "memories" / "PERFORMANCE.md"
+        perf_path = MEMORIES_DIR / "PERFORMANCE.md"
         perf_path.parent.mkdir(parents=True, exist_ok=True)
 
         existing = ""

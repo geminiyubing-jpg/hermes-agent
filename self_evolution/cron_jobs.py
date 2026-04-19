@@ -18,7 +18,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-CRON_DIR = Path.home() / ".hermes" / "cron"
+from self_evolution.paths import CRON_DIR
+
 CRON_FILE = CRON_DIR / "jobs.json"
 
 DREAM_JOB_ID = "self_evolution_dream"

@@ -13,6 +13,7 @@ Design reference: Claude Code plugins/learning-output-style/
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, Optional
 
 from self_evolution.models import StrategyRule
@@ -21,6 +22,44 @@ from self_evolution.rule_engine import StrategyRuleEngine
 logger = logging.getLogger(__name__)
 
 _engine = StrategyRuleEngine()
+
+# ── TTL-based cache to avoid reading strategies.json on every LLM call ────
+
+_cached_strategies: list | None = None
+_cache_ts: float = 0.0
+_CACHE_TTL: float = 60.0  # seconds
+
+
+def _load_active_strategies() -> list:
+    """Load active strategies from strategy store (cached for _CACHE_TTL)."""
+    global _cached_strategies, _cache_ts
+
+    now = time.time()
+    if _cached_strategies is not None and (now - _cache_ts) < _CACHE_TTL:
+        return _cached_strategies
+
+    from self_evolution.strategy_store import StrategyStore
+
+    store = StrategyStore()
+    data = store.load()
+    rules = data.get("rules", [])
+
+    strategies = []
+    for rule_data in rules:
+        if not rule_data.get("enabled", True):
+            continue
+        strategy = StrategyRule.from_dict(rule_data)
+        strategies.append(strategy)
+
+    _cached_strategies = strategies
+    _cache_ts = now
+    return strategies
+
+
+def invalidate_cache():
+    """Invalidate the strategy cache (call after strategy updates)."""
+    global _cached_strategies
+    _cached_strategies = None
 
 
 def inject_hints(kwargs: dict) -> Optional[str]:
@@ -42,24 +81,6 @@ def inject_hints(kwargs: dict) -> Optional[str]:
 
     # Format hints
     return _engine.format_hints(matched)
-
-
-def _load_active_strategies() -> list:
-    """Load active strategies from strategy store."""
-    from self_evolution.strategy_store import StrategyStore
-
-    store = StrategyStore()
-    data = store.load()
-    rules = data.get("rules", [])
-
-    strategies = []
-    for rule_data in rules:
-        if not rule_data.get("enabled", True):
-            continue
-        strategy = StrategyRule.from_dict(rule_data)
-        strategies.append(strategy)
-
-    return strategies
 
 
 def _build_context(kwargs: dict) -> dict:
