@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS reflection_reports (
     avg_score REAL,
     error_summary TEXT DEFAULT '',
     waste_summary TEXT DEFAULT '',
+    code_change_summary TEXT DEFAULT '',
     worst_patterns TEXT DEFAULT '[]',
     best_patterns TEXT DEFAULT '[]',
     tool_insights TEXT DEFAULT '{}',
@@ -156,6 +157,13 @@ def init_db():
         )
         conn.commit()
         logger.info("self_evolution database initialized at %s", DB_PATH)
+
+        # Schema migration: add code_change_summary column if missing
+        try:
+            conn.execute("ALTER TABLE reflection_reports ADD COLUMN code_change_summary TEXT DEFAULT ''")
+            logger.info("Added code_change_summary column to reflection_reports")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     finally:
         conn.close()
 

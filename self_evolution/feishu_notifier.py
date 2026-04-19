@@ -29,6 +29,8 @@ class FeishuNotifier:
         self.app_id = os.getenv("FEISHU_APP_ID", "")
         self.app_secret = os.getenv("FEISHU_APP_SECRET", "")
         self.enabled = bool(self.app_id and self.app_secret)
+        self._client = None
+        self._token_cache: Optional[tuple[str, float]] = None  # (token, expire_at)
 
     def send_daily_report(self):
         """Send pending proposals as a daily Feishu card message.
@@ -191,6 +193,14 @@ class FeishuNotifier:
                 "text": {"tag": "lark_md", "content": f"**时间浪费分析**\n{waste_summary}"},
             })
 
+        # Code change summary
+        code_change_summary = report.get("code_change_summary", "")
+        if code_change_summary:
+            elements.append({
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": f"**系统代码更新**\n{code_change_summary}"},
+            })
+
         # Separator
         elements.append({"tag": "hr"})
 
@@ -243,52 +253,94 @@ class FeishuNotifier:
             "elements": elements,
         }
 
+    def _get_client(self):
+        """Get or create a cached lark Client instance."""
+        if self._client is None:
+            import lark_oapi as lark
+            self._client = (
+                lark.Client.builder()
+                .app_id(self.app_id)
+                .app_secret(self.app_secret)
+                .build()
+            )
+        return self._client
+
     def _send_card(self, card: dict):
         """Send an interactive card via Feishu.
 
-        Uses the existing Feishu gateway if available,
-        otherwise falls back to direct API call.
+        Prefers lark_oapi SDK (same as the gateway), falls back to REST.
         """
         try:
-            # Try using existing gateway's send_message
-            import requests
-
-            # Get tenant access token
-            token = self._get_tenant_token()
-            if not token:
-                logger.warning("Failed to get Feishu token")
+            receive_id, receive_id_type = self._resolve_target()
+            if not receive_id:
+                logger.warning("No Feishu receive target configured")
                 return
 
-            # Send card message
-            deliver_to = os.getenv("SELF_EVOLUTION_FEISHU_DELIVER", "user")
-            url = "https://open.feishu.cn/open-apis/im/v1/messages"
+            content_str = json.dumps(card, ensure_ascii=False)
 
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            }
+            # Try SDK first (using cached client)
+            try:
+                from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
-            payload = {
-                "msg_type": "interactive",
-                "content": json.dumps(card, ensure_ascii=False),
-            }
+                client = self._get_client()
 
-            if deliver_to.startswith("chat:"):
-                payload["receive_id"] = deliver_to.replace("chat:", "")
-                payload["receive_id_type"] = "chat_id"
-            else:
-                # Send to user
-                user_id = os.getenv("SELF_EVOLUTION_FEISHU_USER_ID", "")
-                if user_id:
-                    payload["receive_id"] = user_id
-                    payload["receive_id_type"] = "user_id"
+                body = CreateMessageRequestBody.builder() \
+                    .receive_id(receive_id) \
+                    .msg_type("interactive") \
+                    .content(content_str) \
+                    .build()
 
-            resp = requests.post(url, headers=headers, params=payload, timeout=30)
-            if resp.status_code != 200:
-                logger.warning("Feishu send failed: %s", resp.text)
+                request = CreateMessageRequest.builder() \
+                    .receive_id_type(receive_id_type) \
+                    .request_body(body) \
+                    .build()
+
+                response = client.im.v1.message.create(request)
+                if response.success():
+                    logger.info("Feishu card sent via SDK")
+                    return
+                logger.warning("Feishu SDK send failed: code=%s msg=%s", response.code, response.msg)
+            except ImportError:
+                pass
+
+            # Fallback to REST API
+            self._send_card_rest(receive_id, receive_id_type, content_str)
 
         except Exception as exc:
             logger.warning("Feishu notification failed: %s", exc)
+
+    def _resolve_target(self) -> tuple:
+        """Resolve (receive_id, receive_id_type) from env config."""
+        deliver_to = os.getenv("SELF_EVOLUTION_FEISHU_DELIVER", "user")
+        if deliver_to.startswith("chat:"):
+            return deliver_to.replace("chat:", ""), "chat_id"
+        user_id = os.getenv("SELF_EVOLUTION_FEISHU_USER_ID", "")
+        if not user_id:
+            return "", ""
+        if user_id.startswith("ou_"):
+            return user_id, "open_id"
+        if user_id.startswith("oc_"):
+            return user_id, "chat_id"
+        return user_id, "user_id"
+
+    def _send_card_rest(self, receive_id: str, receive_id_type: str, content: str):
+        """Fallback: send card via REST API."""
+        import requests
+
+        token = self._get_tenant_token()
+        if not token:
+            logger.warning("Failed to get Feishu token")
+            return
+
+        resp = requests.post(
+            "https://open.feishu.cn/open-apis/im/v1/messages",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"receive_id": receive_id, "receive_id_type": receive_id_type},
+            json={"msg_type": "interactive", "content": content},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            logger.warning("Feishu REST send failed: %s", resp.text)
 
     def _send_confirmation(self, proposal_id: str, message: str):
         """Send a simple confirmation message."""
@@ -308,7 +360,11 @@ class FeishuNotifier:
         self._send_card(card)
 
     def _get_tenant_token(self) -> Optional[str]:
-        """Get Feishu tenant access token."""
+        """Get Feishu tenant access token with caching (1.5h TTL)."""
+        if self._token_cache is not None:
+            token, expire_at = self._token_cache
+            if time.time() < expire_at:
+                return token
         try:
             import requests
             resp = requests.post(
@@ -320,7 +376,11 @@ class FeishuNotifier:
                 timeout=10,
             )
             if resp.status_code == 200:
-                return resp.json().get("tenant_access_token")
+                token = resp.json().get("tenant_access_token")
+                if token:
+                    # Feishu tokens expire in ~2h; cache for 1.5h
+                    self._token_cache = (token, time.time() + 5400)
+                return token
         except Exception as exc:
             logger.debug("Failed to get Feishu token: %s", exc)
         return None

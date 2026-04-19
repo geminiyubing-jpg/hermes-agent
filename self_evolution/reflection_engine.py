@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -29,6 +31,7 @@ from self_evolution import db
 from self_evolution.models import (
     ErrorAnalysis, ToolFailure, RetryPattern,
     WasteAnalysis, ToolDuration, RepeatedOperation,
+    CodeChangeAnalysis, CommitInfo,
     ReflectionReport,
 )
 
@@ -37,45 +40,254 @@ logger = logging.getLogger(__name__)
 # ── Model Configuration ──────────────────────────────────────────────────
 
 
-def _load_model_config() -> dict:
-    """Load model config from main hermes config.yaml (~/.hermes/config.yaml).
+def _resolve_runtime_config() -> dict:
+    """Resolve model config via hermes unified runtime provider.
 
-    Reads the primary model and first fallback provider to use for reflection,
-    so the plugin always stays in sync with the user's model preferences.
+    Uses resolve_runtime_provider() which handles config.yaml, auth.json,
+    credential pools, and environment variables automatically.
+
+    Returns dict with:
+        base_url, api_key, model, provider — primary text model
+        fallback: {base_url, api_key, model, provider} — fallback text model
+        multimodal: {base_url, api_key, model, provider} — vision model
+    Returns empty dict if no provider is available.
     """
     try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
         from hermes_cli.config import load_config
+
+        runtime = resolve_runtime_provider()
         config = load_config()
+        model_name = config.get("model", {}).get("default", "")
 
-        model_cfg = config.get("model", {})
-        provider = model_cfg.get("provider", "")
-        model_name = model_cfg.get("default", "")
-        base_url = model_cfg.get("base_url", "")
-
-        primary = {"provider": provider, "model": model_name}
-        if base_url:
-            primary["base_url"] = base_url
-
-        # First fallback provider
-        fallback = None
-        fallbacks = config.get("fallback_providers", [])
-        if fallbacks:
-            fb = fallbacks[0]
-            fallback = {
-                "provider": fb.get("provider", ""),
-                "model": fb.get("model", ""),
-            }
-            if fb.get("base_url"):
-                fallback["base_url"] = fb["base_url"]
-
-        return {"primary": primary, "fallback": fallback}
-
-    except Exception:
-        logger.debug("Failed to load hermes config, using defaults")
-        return {
-            "primary": {"provider": "zhipu", "model": "glm-5.1"},
-            "fallback": None,
+        result = {
+            "base_url": runtime.get("base_url", ""),
+            "api_key": runtime.get("api_key", ""),
+            "model": runtime.get("model", model_name),
+            "provider": runtime.get("provider", ""),
         }
+
+        # Resolve fallback model from config.yaml fallback_providers
+        result["fallback"] = _resolve_fallback_config(config)
+
+        # Resolve multimodal model from custom local provider
+        result["multimodal"] = _resolve_multimodal_config(config)
+
+        return result
+    except Exception:
+        logger.debug("Failed to resolve runtime provider", exc_info=True)
+        return {}
+
+
+def _resolve_fallback_config(config: dict = None) -> dict:
+    """Resolve fallback text model from config.yaml fallback_providers.
+
+    Falls back to the first custom provider with a local URL.
+    """
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        if config is None:
+            from hermes_cli.config import load_config
+            config = load_config()
+
+        # 1. Check fallback_providers list
+        for fb in config.get("fallback_providers", []):
+            fb_provider = (fb.get("provider") or "").strip()
+            fb_model = (fb.get("model") or "").strip()
+            if not fb_provider:
+                continue
+            try:
+                rt = resolve_runtime_provider(requested=fb_provider)
+                base_url = rt.get("base_url", "")
+                api_key = rt.get("api_key", "")
+                if base_url and fb_model:
+                    return {
+                        "base_url": base_url,
+                        "api_key": api_key,
+                        "model": fb_model,
+                        "provider": rt.get("provider", ""),
+                    }
+            except Exception:
+                pass
+
+        # 2. First custom provider with local URL as last resort
+        for cp in config.get("custom_providers", []):
+            base_url = (cp.get("base_url") or cp.get("api", "")).strip()
+            if base_url and ("localhost" in base_url or "127.0.0.1" in base_url):
+                model = (cp.get("model") or "").strip()
+                if not model:
+                    model = _detect_local_model(
+                        base_url,
+                        (cp.get("api_key") or "").strip(),
+                    )
+                # Skip multimodal-only models
+                if model and "gemma-4-26b" not in model.lower():
+                    return {
+                        "base_url": base_url.rstrip("/"),
+                        "api_key": (cp.get("api_key") or "").strip(),
+                        "model": model,
+                        "provider": "custom",
+                    }
+
+        return {}
+    except Exception:
+        logger.debug("Failed to resolve fallback config", exc_info=True)
+        return {}
+
+
+def _resolve_multimodal_config(config: dict = None) -> dict:
+    """Resolve multimodal (vision) model config.
+
+    Priority:
+      1. auxiliary.vision config in config.yaml
+      2. First custom provider with a local URL (localhost / 127.0.0.1)
+      3. Empty dict (multimodal unavailable)
+    """
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+
+        if config is None:
+            from hermes_cli.config import load_config
+            config = load_config()
+
+        # 1. Check auxiliary.vision config
+        aux = config.get("auxiliary", {})
+        vision_cfg = aux.get("vision", {})
+        vision_provider = (vision_cfg.get("provider") or "").strip().lower()
+        if vision_provider and vision_provider != "auto":
+            try:
+                rt = resolve_runtime_provider(requested=vision_provider)
+                if rt.get("base_url"):
+                    return {
+                        "base_url": rt.get("base_url", ""),
+                        "api_key": rt.get("api_key", ""),
+                        "model": vision_cfg.get("model") or rt.get("model", ""),
+                        "provider": rt.get("provider", ""),
+                    }
+            except Exception:
+                pass
+
+        # 2. Find first custom provider with local URL
+        for cp in config.get("custom_providers", []):
+            base_url = (cp.get("base_url") or cp.get("api", "")).strip()
+            if base_url and ("localhost" in base_url or "127.0.0.1" in base_url):
+                api_key = (cp.get("api_key") or "").strip()
+                key_env = (cp.get("key_env") or "").strip()
+                if not api_key and key_env:
+                    import os
+                    api_key = os.getenv(key_env, "")
+                model = (cp.get("model") or "").strip()
+                if not model:
+                    # Auto-detect model from server
+                    model = _detect_local_model(base_url, api_key)
+                if model:
+                    return {
+                        "base_url": base_url.rstrip("/"),
+                        "api_key": api_key,
+                        "model": model,
+                        "provider": "custom",
+                    }
+
+        return {}
+    except Exception:
+        logger.debug("Failed to resolve multimodal config", exc_info=True)
+        return {}
+
+
+# ── Model Failover State ─────────────────────────────────────────────────
+
+_active_model: str = "primary"       # "primary" or "fallback"
+_last_health_check: float = 0.0
+_HEALTH_CHECK_INTERVAL: int = 1800   # 30 minutes
+
+
+def _check_primary_health(config: dict) -> bool:
+    """Quick health check: send a minimal request to the primary model."""
+    try:
+        import requests
+        base_url = config.get("base_url", "")
+        api_key = config.get("api_key", "")
+        model = config.get("model", "")
+        if not base_url or not model:
+            return False
+        resp = requests.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "OK"}],
+                "max_tokens": 2,
+            },
+            timeout=15,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _get_active_text_config(config: dict) -> tuple:
+    """Return (active_config_dict, is_fallback) based on failover state.
+
+    - If on primary: try it directly.
+    - If on fallback: check primary health every 30 min,
+      switch back when it recovers.
+    """
+    global _active_model, _last_health_check
+    now = time.time()
+
+    if _active_model == "fallback":
+        if now - _last_health_check >= _HEALTH_CHECK_INTERVAL:
+            _last_health_check = now
+            if _check_primary_health(config):
+                _active_model = "primary"
+                logger.info("Primary model recovered, switching back")
+            else:
+                logger.info("Primary model still unavailable, staying on fallback")
+
+    fallback = config.get("fallback", {})
+    if _active_model == "primary":
+        return config, False
+    elif fallback:
+        return fallback, True
+    else:
+        return config, False
+
+
+def _switch_to_fallback():
+    """Mark primary as down and switch to fallback."""
+    global _active_model, _last_health_check
+    _active_model = "fallback"
+    _last_health_check = time.time()
+    logger.warning("Primary model failed, switched to fallback")
+
+
+def _detect_local_model(base_url: str, api_key: str = "") -> str:
+    """Auto-detect a multimodal model from a local server."""
+    try:
+        import requests
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        resp = requests.get(
+            f"{base_url.rstrip('/')}/models",
+            headers=headers, timeout=5,
+        )
+        if resp.ok:
+            models = resp.json().get("data", [])
+            # Prefer models with known multimodal capabilities
+            multimodal_hints = ["gemma-4", "qwen2-vl", "qwen-vl", "llava", "pixtral", "vision"]
+            for m in models:
+                mid = m.get("id", "").lower()
+                for hint in multimodal_hints:
+                    if hint in mid:
+                        return m["id"]
+    except Exception:
+        pass
+    return ""
 
 
 class DreamEngine:
@@ -89,13 +301,21 @@ class DreamEngine:
     """
 
     def __init__(self, config: dict = None):
-        self.config = config or _load_model_config()
+        self.config = config or _resolve_runtime_config()
         self._model_client = None
         self._current_prompt = ""
 
-    def run(self, hours: int = 24) -> Optional[ReflectionReport]:
-        """Main dream consolidation flow."""
+    def run(self, hours: int = 24, max_runtime_seconds: int = 0) -> Optional[ReflectionReport]:
+        """Main dream consolidation flow.
+
+        Args:
+            hours: Analyze data from the last N hours.
+            max_runtime_seconds: Hard timeout in seconds. 0 = no limit.
+                If exceeded, stops at the next step boundary and returns None.
+        """
         logger.info("Dream engine starting — analyzing last %d hours", hours)
+
+        deadline = time.time() + max_runtime_seconds if max_runtime_seconds > 0 else 0
 
         now = time.time()
         cutoff = now - (hours * 3600)
@@ -125,12 +345,25 @@ class DreamEngine:
                 return None
 
             # 2. Error analysis
+            if deadline and time.time() > deadline:
+                logger.warning("Dream engine timed out before error analysis")
+                return None
             error_analysis = self._analyze_errors(scores, tool_invocations, signals)
             logger.info("Error analysis: %s", error_analysis.summary())
 
             # 3. Time waste analysis
+            if deadline and time.time() > deadline:
+                logger.warning("Dream engine timed out before waste analysis")
+                return None
             waste_analysis = self._analyze_time_waste(scores, tool_invocations)
             logger.info("Waste analysis: %s", waste_analysis.summary())
+
+            # 3.5. Code change analysis
+            if deadline and time.time() > deadline:
+                logger.warning("Dream engine timed out before code analysis")
+                return None
+            code_analysis = self._analyze_code_changes(hours=hours)
+            logger.info("Code change analysis: %d commits found", code_analysis.total_commits)
 
             # 4. Compute average score
             avg_score = (
@@ -139,9 +372,13 @@ class DreamEngine:
             )
 
             # 5. Build reflection prompt
+            if deadline and time.time() > deadline:
+                logger.warning("Dream engine timed out before model call")
+                return None
             prompt = self._build_reflection_prompt(
                 scores, tool_invocations, signals,
                 error_analysis, waste_analysis, avg_score,
+                code_analysis=code_analysis,
             )
 
             # 6. Call model for deep reflection
@@ -159,6 +396,7 @@ class DreamEngine:
                 avg_score=avg_score,
                 error_analysis=error_analysis,
                 waste_analysis=waste_analysis,
+                code_analysis=code_analysis,
             )
 
             # 8. Store report
@@ -329,6 +567,120 @@ class DreamEngine:
             shortcut_opportunities=[],
         )
 
+    # ── Code Change Analysis ───────────────────────────────────────────────
+
+    def _analyze_code_changes(self, hours: int = 24) -> CodeChangeAnalysis:
+        """Analyze git commits from the previous period."""
+        project_root = str(Path(__file__).resolve().parent.parent)
+
+        cutoff_epoch = time.time() - (hours * 3600)
+        cutoff_date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(cutoff_epoch))
+
+        try:
+            # 1. Get commit list
+            result = subprocess.run(
+                ["git", "log", "--format=%h|%s|%an|%at", "--no-merges",
+                 f"--since={cutoff_date}"],
+                capture_output=True, text=True, timeout=30,
+                cwd=project_root,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return CodeChangeAnalysis()
+
+            commits = []
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split("|", 3)
+                if len(parts) < 4:
+                    continue
+                hash_short, subject, author, ts_str = parts
+                commits.append(CommitInfo(
+                    hash_short=hash_short,
+                    subject=subject,
+                    body="",
+                    author=author,
+                    timestamp=float(ts_str),
+                    files_changed=0,
+                    insertions=0,
+                    deletions=0,
+                    file_list=[],
+                ))
+
+            if not commits:
+                return CodeChangeAnalysis()
+
+            # 2. Get per-commit stats (cap at 15)
+            for commit in commits[:15]:
+                stat_result = subprocess.run(
+                    ["git", "diff", "--shortstat",
+                     f"{commit.hash_short}~1..{commit.hash_short}"],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=project_root,
+                )
+                stat_text = stat_result.stdout.strip()
+                commit.files_changed = _parse_int(r'(\d+) files? changed', stat_text)
+                commit.insertions = _parse_int(r'(\d+) insertion', stat_text)
+                commit.deletions = _parse_int(r'(\d+) deletion', stat_text)
+
+            # 3. Get file lists for top 5 commits by size
+            by_size = sorted(commits,
+                             key=lambda c: c.insertions + c.deletions,
+                             reverse=True)[:5]
+            for commit in by_size:
+                files_result = subprocess.run(
+                    ["git", "diff", "--name-only",
+                     f"{commit.hash_short}~1..{commit.hash_short}"],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=project_root,
+                )
+                commit.file_list = [
+                    f for f in files_result.stdout.strip().split("\n") if f
+                ][:20]
+
+            # 4. Get commit bodies for top 5
+            for commit in by_size:
+                body_result = subprocess.run(
+                    ["git", "log", "-1", "--format=%b", commit.hash_short],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=project_root,
+                )
+                commit.body = body_result.stdout.strip()[:500]
+
+            # 5. Aggregate stats
+            total_ins = sum(c.insertions for c in commits)
+            total_del = sum(c.deletions for c in commits)
+            total_files = sum(c.files_changed for c in commits)
+            authors = list(dict.fromkeys(c.author for c in commits))
+
+            # 6. Categorize by conventional commit prefix
+            categories: Dict[str, int] = {}
+            for c in commits:
+                cat = _categorize_commit(c.subject)
+                categories[cat] = categories.get(cat, 0) + 1
+
+            # 7. Extract top-level module areas
+            all_files = []
+            for c in by_size:
+                all_files.extend(c.file_list)
+            areas = list(dict.fromkeys(
+                f.split("/")[0] for f in all_files
+                if "/" in f and not f.startswith(".")
+            ))[:10]
+
+            return CodeChangeAnalysis(
+                commits=commits,
+                total_commits=len(commits),
+                total_insertions=total_ins,
+                total_deletions=total_del,
+                total_files_changed=total_files,
+                authors=authors,
+                change_categories=categories,
+                areas_touched=areas,
+            )
+
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            logger.debug("git analysis unavailable", exc_info=True)
+            return CodeChangeAnalysis()
+
     # ── Reflection Prompt ─────────────────────────────────────────────────
 
     def _build_reflection_prompt(
@@ -339,9 +691,14 @@ class DreamEngine:
         errors: ErrorAnalysis,
         waste: WasteAnalysis,
         avg_score: float,
+        code_analysis: CodeChangeAnalysis = None,
     ) -> str:
-        """Build the reflection prompt for the model."""
-        # Load prompt template
+        """Build the reflection prompt as structured JSON data.
+
+        All analysis results are serialized as JSON so the model receives
+        lossless data instead of pre-summarized text.
+        """
+        # Load user prompt template (short: just overview + data placeholder)
         template_path = Path(__file__).parent / "prompts" / "reflection.md"
         if template_path.exists():
             template = template_path.read_text(encoding="utf-8")
@@ -355,142 +712,164 @@ class DreamEngine:
             if total_invocations else 100
         )
 
-        # Signal distribution
+        # Period range
+        if scores:
+            ts_min = min(s.get("created_at", 0) for s in scores)
+            ts_max = max(s.get("created_at", 0) for s in scores)
+            period_range = (
+                f"{time.strftime('%m-%d %H:%M', time.localtime(ts_min))} ~ "
+                f"{time.strftime('%m-%d %H:%M', time.localtime(ts_max))}"
+            )
+        else:
+            period_range = "N/A"
+
+        # Build structured data JSON — compact format to save tokens
+        data = {}
+
+        # 1. Sessions — compact: [score, completion, efficiency, cost, satisfaction, category]
+        data["sessions"] = [
+            [
+                round(s.get("composite_score", 0), 2),
+                round(s.get("completion_rate", 0), 2),
+                round(s.get("efficiency_score", 0), 2),
+                round(s.get("cost_efficiency", 0), 2),
+                round(s.get("satisfaction_proxy", 0), 2),
+                s.get("task_category", ""),
+            ]
+            for s in scores
+        ]
+
+        # 2. Tool usage — compact: {tool: [calls, failures, avg_ms]}
+        tool_stats: Dict[str, List[int]] = {}
+        for inv in invocations:
+            tool = inv.get("tool_name", "")
+            if tool not in tool_stats:
+                tool_stats[tool] = [0, 0, 0]  # calls, failures, total_ms
+            tool_stats[tool][0] += 1
+            if not inv.get("success", True):
+                tool_stats[tool][1] += 1
+            tool_stats[tool][2] += inv.get("duration_ms", 0) or 0
+        data["tools"] = {
+            t: [v[0], v[1], round(v[2] / max(v[0], 1))]
+            for t, v in sorted(tool_stats.items(), key=lambda x: x[1][2], reverse=True)
+        }
+
+        # 3. Signals — compact: {type: count}
         signal_types = {}
         for s in signals:
             stype = s.get("signal_type", "unknown")
             signal_types[stype] = signal_types.get(stype, 0) + 1
+        data["signals"] = signal_types
 
-        prompt = template.replace("{sessions_count}", str(len(scores)))
+        # 4. Errors — only non-empty fields
+        err_data = {}
+        if errors.tool_failures:
+            err_data["tool_failures"] = [
+                f"{tf.tool_name}:{tf.error_type}x{tf.count}"
+                for tf in errors.tool_failures
+            ]
+        if errors.retry_patterns:
+            err_data["retries"] = [
+                f"{rp.tool_name}x{rp.attempt_count}"
+                for rp in errors.retry_patterns[:5]
+            ]
+        if errors.incomplete_sessions:
+            err_data["incomplete"] = len(errors.incomplete_sessions)
+        if errors.user_corrections:
+            err_data["corrections"] = errors.user_corrections
+            if errors.correction_examples:
+                err_data["correction_examples"] = errors.correction_examples[:2]
+        if errors.api_error_count:
+            err_data["api_errors"] = errors.api_error_count
+        if err_data:
+            data["errors"] = err_data
+
+        # 5. Waste — only non-empty
+        waste_data = {}
+        if waste.slowest_tools:
+            waste_data["slowest"] = [
+                f"{td.tool_name} {round(td.avg_duration_ms)}ms/{td.call_count}calls"
+                for td in waste.slowest_tools[:5]
+            ]
+        if waste.repeated_operations:
+            waste_data["repeated"] = [
+                f"{ro.description} x{ro.count}"
+                for ro in waste.repeated_operations[:3]
+            ]
+        if waste.inefficient_sessions:
+            waste_data["inefficient"] = len(waste.inefficient_sessions)
+        if waste_data:
+            data["waste"] = waste_data
+
+        # 6. Code changes — flat compact format
+        if code_analysis and code_analysis.commits:
+            cc = code_analysis
+            commits_data = []
+            for c in cc.commits[:10]:
+                entry = f"{c.hash_short} {c.subject} +{c.insertions}/-{c.deletions}"
+                if c.file_list:
+                    entry += f" [{','.join(c.file_list[:5])}]"
+                if c.body:
+                    entry += f" | {c.body[:150]}"
+                commits_data.append(entry)
+            data["code_changes"] = {
+                "stats": f"{cc.total_commits} commits +{cc.total_insertions}/-{cc.total_deletions} lines {cc.total_files_changed} files",
+                "categories": cc.change_categories,
+                "areas": cc.areas_touched,
+                "commits": commits_data,
+            }
+
+        data_json = json.dumps(data, ensure_ascii=False, indent=2)
+
+        # Fill template
+        prompt = template.replace("{period_range}", period_range)
+        prompt = prompt.replace("{sessions_count}", str(len(scores)))
         prompt = prompt.replace("{avg_score}", f"{avg_score:.3f}")
         prompt = prompt.replace("{total_invocations}", str(total_invocations))
         prompt = prompt.replace("{success_rate}", f"{success_rate:.1f}")
-        prompt = prompt.replace("{error_summary}", errors.summary())
-        prompt = prompt.replace("{waste_summary}", waste.summary())
-        prompt = prompt.replace("{signal_distribution}", json.dumps(signal_types, ensure_ascii=False))
-
-        # Tool usage breakdown
-        tool_counts: Dict[str, int] = {}
-        for inv in invocations:
-            tool = inv.get("tool_name", "")
-            tool_counts[tool] = tool_counts.get(tool, 0) + 1
-        prompt = prompt.replace("{tool_usage}", json.dumps(tool_counts, ensure_ascii=False, indent=2))
+        prompt = prompt.replace("{data_json}", data_json)
 
         return prompt
 
     # ── Model Call ────────────────────────────────────────────────────────
 
     def _call_model(self, prompt: str) -> Optional[str]:
-        """Call the configured model (primary from hermes config, fallback if available)."""
+        """Call the active model with automatic failover.
+
+        Resolution order:
+          1. Primary model (glm-5.1 via zai)
+          2. Fallback model (Qwen3.6 via local) — if primary fails
+        Health check: when on fallback, probes primary every 30 min
+        and switches back when it recovers.
+        """
         self._current_prompt = prompt
 
-        # Try primary model first
-        result = self._try_model_call(self.config["primary"])
-        if result is not None:
-            return result
-
-        # Try fallback model
-        fallback = self.config.get("fallback")
-        if fallback:
-            logger.warning("Primary model failed, trying fallback: %s", fallback.get("model"))
-            return self._try_model_call(fallback)
-
-        logger.warning("Primary model failed, no fallback configured")
-        return None
-
-    def _try_model_call(self, model_config: dict) -> Optional[str]:
-        """Try to call a specific model.
-
-        Resolves the provider and base_url from hermes config automatically.
-        All providers use the OpenAI-compatible /chat/completions interface.
-        """
-        provider = model_config.get("provider", "")
-        model = model_config.get("model", "")
-        base_url = model_config.get("base_url", "")
-
-        # Resolve base_url from hermes providers config if not explicit
-        if not base_url:
-            base_url = self._resolve_base_url(provider)
-
-        # Resolve API key
-        api_key = self._resolve_api_key(provider)
+        active_cfg, is_fallback = _get_active_text_config(self.config)
+        base_url = active_cfg.get("base_url", "")
+        api_key = active_cfg.get("api_key", "")
+        model = active_cfg.get("model", "")
 
         if not base_url or not model:
-            logger.warning("Incomplete model config: provider=%s model=%s", provider, model)
+            logger.warning("Incomplete runtime config: base_url=%s model=%s",
+                           bool(base_url), model)
             return None
 
-        return self._call_chat_completions(base_url, api_key, model)
+        result = self._call_chat_completions(base_url, api_key, model)
 
-    def _resolve_base_url(self, provider: str) -> str:
-        """Resolve base_url from hermes provider config."""
-        try:
-            from hermes_cli.config import load_config
-            config = load_config()
+        # If primary failed, try fallback
+        if result is None and not is_fallback:
+            fallback = self.config.get("fallback", {})
+            if fallback.get("base_url") and fallback.get("model"):
+                logger.warning("Primary model failed, trying fallback: %s",
+                               fallback.get("model"))
+                result = self._call_chat_completions(
+                    fallback["base_url"], fallback.get("api_key", ""),
+                    fallback["model"],
+                )
+                if result is not None:
+                    _switch_to_fallback()
 
-            # 1. Check custom_providers list (e.g. "custom-127-0-0-1-8000")
-            for cp in config.get("custom_providers", []):
-                name = cp.get("name", "")
-                slug = "custom:" + name.strip().lower().replace(" ", "-")
-                if provider in (name, slug):
-                    return cp.get("base_url", cp.get("api", ""))
-
-            # 2. Check providers dict
-            providers = config.get("providers", {})
-            if provider in providers:
-                p = providers[provider]
-                return p.get("api", p.get("base_url", ""))
-
-            # 3. Known provider defaults
-            known = {
-                "zai": "https://open.bigmodel.cn/api/paas/v4",
-                "zhipu": "https://open.bigmodel.cn/api/paas/v4",
-                "openrouter": "https://openrouter.ai/api/v1",
-            }
-            return known.get(provider, "")
-        except Exception:
-            return ""
-
-    def _resolve_api_key(self, provider: str) -> str:
-        """Resolve API key for a provider from hermes config or env vars."""
-        try:
-            from hermes_cli.config import load_config
-            config = load_config()
-
-            # 1. Check custom_providers list
-            for cp in config.get("custom_providers", []):
-                name = cp.get("name", "")
-                slug = "custom:" + name.strip().lower().replace(" ", "-")
-                if provider in (name, slug):
-                    key = cp.get("api_key", "")
-                    if key:
-                        return key
-                    key_env = cp.get("key_env", "")
-                    if key_env:
-                        return os.getenv(key_env, "")
-
-            # 2. Check providers config for key_env
-            providers = config.get("providers", {})
-            p = providers.get(provider, {})
-            key_env = p.get("key_env", "")
-            if key_env:
-                return os.getenv(key_env, "")
-
-            # 3. Check model-level api_key
-            model_cfg = config.get("model", {})
-            if model_cfg.get("api_key"):
-                return model_cfg["api_key"]
-        except Exception:
-            pass
-
-        # 4. Fallback env vars by provider
-        env_map = {
-            "zai": "ZAI_API_KEY",
-            "zhipu": "ZHIPU_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-        }
-        env_var = env_map.get(provider, "OPENAI_API_KEY")
-        return os.getenv(env_var, "")
+        return result
 
     def _call_chat_completions(
         self, base_url: str, api_key: str, model: str,
@@ -509,7 +888,7 @@ class DreamEngine:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "你是一个专业的AI agent性能分析专家。"},
+                        {"role": "system", "content": _SYSTEM_PROMPT},
                         {"role": "user", "content": self._current_prompt or ""},
                     ],
                     "temperature": 0.3,
@@ -525,6 +904,62 @@ class DreamEngine:
             logger.debug("Chat completions call failed: %s", exc)
         return None
 
+    # ── Multimodal Call ───────────────────────────────────────────────────
+
+    def call_multimodal(self, prompt: str, images: list = None) -> Optional[str]:
+        """Call multimodal model with text and optional images.
+
+        Routes to local multimodal model (gemma-4-26b-a4b-it-4bit) when
+        images are involved. Falls back to text model if no images.
+
+        Args:
+            prompt: Text prompt.
+            images: List of image data, each item is either:
+                - URL string (http/https/data:image)
+                - bytes (raw image data, auto-encoded to base64)
+
+        Returns:
+            Model response text, or None on failure.
+        """
+        mm = self.config.get("multimodal", {})
+        if not mm or not mm.get("base_url"):
+            logger.debug("No multimodal model configured, falling back to text")
+            return self._call_model(prompt)
+
+        # Build content with images
+        content = [{"type": "text", "text": prompt}]
+        for img in (images or []):
+            if isinstance(img, bytes):
+                import base64
+                b64 = base64.b64encode(img).decode()
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"},
+                })
+            elif isinstance(img, str):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": img},
+                })
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                base_url=mm["base_url"].rstrip("/") + ("/v1" if not mm["base_url"].rstrip("/").endswith("/v1") else ""),
+                api_key=mm.get("api_key") or "no-key",
+            )
+            resp = client.chat.completions.create(
+                model=mm["model"],
+                messages=[{"role": "user", "content": content}],
+                temperature=0.3,
+                max_tokens=2000,
+                timeout=120,
+            )
+            return resp.choices[0].message.content
+        except Exception as exc:
+            logger.debug("Multimodal call failed: %s", exc)
+            return None
+
     # ── Reflection Parsing ────────────────────────────────────────────────
 
     def _parse_reflection(
@@ -536,33 +971,59 @@ class DreamEngine:
         avg_score: float,
         error_analysis: ErrorAnalysis,
         waste_analysis: WasteAnalysis,
+        code_analysis: CodeChangeAnalysis = None,
     ) -> ReflectionReport:
         """Parse model output into structured ReflectionReport.
 
-        Tries JSON parse first, falls back to text extraction.
+        Extraction cascade:
+          1. Direct JSON parse
+          2. Strip markdown ```json ... ``` wrapper, retry JSON
+          3. Extract JSON object via regex (handle trailing text)
+          4. Text-based section extraction (fallback)
         """
         worst_patterns = []
         best_patterns = []
         recommendations = []
         tool_insights = {}
 
-        # Try JSON parse
-        try:
-            data = json.loads(reflection_text)
-            worst_patterns = data.get("worst_patterns", [])
-            best_patterns = data.get("best_patterns", [])
-            recommendations = data.get("recommendations", [])
-            tool_insights = data.get("tool_insights", {})
-        except json.JSONDecodeError:
-            # Text-based extraction
-            lines = reflection_text.split("\n")
+        text = reflection_text.strip()
+
+        # 1. Direct JSON parse
+        data = _try_parse_json(text)
+
+        if data is None:
+            # 2. Strip markdown wrapper
+            m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+            if m:
+                data = _try_parse_json(m.group(1))
+
+        if data is None:
+            # 3. Regex extract first JSON object
+            m = re.search(r'\{[^{}]*"(?:worst|best|recommendations)"[^{}]*\}', text, re.DOTALL)
+            if m:
+                data = _try_parse_json(m.group(0))
+
+        if data is None:
+            # 3.5. Broader regex — find outermost braces
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end > start:
+                data = _try_parse_json(text[start:end + 1])
+
+        if data is not None:
+            worst_patterns = data.get("worst_patterns") or []
+            best_patterns = data.get("best_patterns") or []
+            recommendations = data.get("recommendations") or []
+            tool_insights = data.get("tool_insights") or {}
+        else:
+            # 4. Text-based extraction
             section = None
-            for line in lines:
+            for line in text.split("\n"):
                 stripped = line.strip()
                 lower = stripped.lower()
-                if ("worst" in lower and "pattern" in lower) or "最差模式" in stripped or "错误模式" in stripped:
+                if ("worst" in lower and "pattern" in lower) or "最差" in stripped or "错误模式" in stripped:
                     section = "worst"
-                elif ("best" in lower and "pattern" in lower) or "最佳模式" in stripped or "成功模式" in stripped:
+                elif ("best" in lower and "pattern" in lower) or "最佳" in stripped or "成功" in stripped:
                     section = "best"
                 elif ("recommend" in lower) or "建议" in stripped:
                     section = "rec"
@@ -574,7 +1035,6 @@ class DreamEngine:
                         best_patterns.append(item)
                     elif section == "rec":
                         recommendations.append(item)
-                # Also handle numbered lists: "1. item" or "1) item"
                 elif len(stripped) > 2 and stripped[0].isdigit() and stripped[1] in ".)" and stripped[2] == " ":
                     item = stripped[3:].strip()
                     if section == "worst":
@@ -595,58 +1055,57 @@ class DreamEngine:
             best_patterns=best_patterns,
             tool_insights=tool_insights,
             recommendations=recommendations,
-            model_used=self.config.get("primary", {}).get("model", "unknown"),
+            code_change_summary=code_analysis.summary() if code_analysis else "",
+            model_used=self.config.get("model", "unknown"),
         )
 
 
 # ── Default Prompt Template ──────────────────────────────────────────────
 
-_DEFAULT_REFLECTION_PROMPT = """你是一个专业的AI agent性能分析专家。请分析以下 Hermes agent 的运行数据，识别问题模式和优化机会。
+_SYSTEM_PROMPT = (
+    "你是 Hermes Agent 性能分析引擎。分析运行数据+代码变更，输出严格JSON（无markdown）。\n"
+    "格式:\n"
+    '{"worst_patterns":["模式(工具+场景+根因)"],"best_patterns":["成功经验"],'
+    '"tool_insights":{"工具":{"sr":0.95,"ms":500,"rec":"建议"}},'
+    '"recommendations":["做什么|效果|风险(l/m/h)|验证"]}\n'
+    "重点:系统性错误>偶发,错误连锁,策略vs工具问题,重复操作,代码设计合理性,自我进化状态,"
+    "可固化流程。≤5条建议,优先高影响低风险。无数据时输出空数组。"
+)
 
-## 分析期间概况
-- Session 数量: {sessions_count}
-- 平均质量评分: {avg_score} (0-1 分)
-- 工具调用总数: {total_invocations}
-- 工具调用成功率: {success_rate}%
 
-## 工具使用分布
-{tool_usage}
+_DEFAULT_REFLECTION_PROMPT = """## 概况
+- 时段: {period_range}
+- Session 数: {sessions_count}, 平均质量: {avg_score}
+- 工具调用: {total_invocations} 次, 成功率 {success_rate}%
 
-## 结果信号分布
-{signal_distribution}
-
-## 错误分析
-{error_summary}
-
-## 时间浪费分析
-{waste_summary}
-
----
-
-请按以下 JSON 格式输出你的分析结果（不要输出其他内容）：
-
-```json
-{{
-  "worst_patterns": [
-    "描述1个最差模式",
-    "描述第2个最差模式"
-  ],
-  "best_patterns": [
-    "描述1个最佳模式"
-  ],
-  "tool_insights": {{
-    "工具名": {{"success_rate": 0.95, "avg_duration_ms": 500, "recommendation": "建议"}}
-  }},
-  "recommendations": [
-    "具体的可操作建议1",
-    "具体的可操作建议2"
-  ]
-}}
-```
-
-重点关注：
-1. 哪些错误是系统性的（重复出现）而非偶发的？
-2. 哪些时间浪费可以通过策略调整避免？
-3. 哪些成功模式值得固化为技能或策略？
-4. 优先给出高影响、低风险的改进建议。
+## 数据
+{data_json}
 """
+
+
+# ── Git Analysis Helpers ─────────────────────────────────────────────────
+
+def _try_parse_json(text: str) -> Optional[dict]:
+    """Try to parse JSON, returning None on any failure."""
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def _parse_int(pattern: str, text: str) -> int:
+    """Extract first integer matching regex pattern from text."""
+    m = re.search(pattern, text)
+    return int(m.group(1)) if m else 0
+
+
+def _categorize_commit(subject: str) -> str:
+    """Categorize commit by conventional commit prefix."""
+    s = subject.lower()
+    for prefix in ("feat", "fix", "refactor", "test", "docs", "chore", "perf", "style", "ci", "build"):
+        if s.startswith(prefix):
+            return prefix
+    return "other"

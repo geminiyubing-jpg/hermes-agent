@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +31,12 @@ def register_cron_jobs():
 
     jobs = _load_jobs()
 
+    # Resolve model config from hermes unified config
+    from self_evolution.reflection_engine import _resolve_runtime_config
+    runtime = _resolve_runtime_config()
+    model = runtime.get("model", "")
+    provider = runtime.get("provider", "")
+
     # Dream consolidation at 1:00
     if not any(j.get("id") == DREAM_JOB_ID for j in jobs):
         jobs.append({
@@ -39,8 +44,8 @@ def register_cron_jobs():
             "name": "Self Evolution - Dream Consolidation",
             "prompt": "运行自我进化的梦境整理：分析前日session的错误和浪费时间问题，生成进化提案。",
             "schedule": "0 1 * * *",
-            "model": os.getenv("SELF_EVOLUTION_MODEL", "glm-5.1"),
-            "provider": os.getenv("SELF_EVOLUTION_PROVIDER", "zhipu"),
+            "model": model,
+            "provider": provider,
             "deliver": "[SILENT]",
             "skill": "self_evolution:dream",
         })
@@ -52,8 +57,8 @@ def register_cron_jobs():
             "name": "Self Evolution - Proposal Push",
             "prompt": "推送今日自我进化提案到飞书。",
             "schedule": "0 19 * * *",
-            "model": os.getenv("SELF_EVOLUTION_MODEL", "glm-5.1"),
-            "provider": os.getenv("SELF_EVOLUTION_PROVIDER", "zhipu"),
+            "model": model,
+            "provider": provider,
             "deliver": "[SILENT]",
             "skill": "self_evolution:propose",
         })
@@ -66,23 +71,13 @@ def run_dream_job():
     """Execute the dream consolidation job.
 
     Called by the cron system at 1:00.
+    Uses hermes unified runtime provider for model config.
     """
     from self_evolution.reflection_engine import DreamEngine
 
-    config = {
-        "primary": {
-            "provider": os.getenv("SELF_EVOLUTION_PROVIDER", "zhipu"),
-            "model": os.getenv("SELF_EVOLUTION_MODEL", "glm-5.1"),
-        },
-        "fallback": {
-            "provider": "ollama",
-            "model": os.getenv("SELF_EVOLUTION_FALLBACK_MODEL", "qwen3:32b"),
-            "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-        },
-    }
-
-    engine = DreamEngine(config=config)
-    report = engine.run(hours=24)
+    # DreamEngine() with no args auto-resolves via resolve_runtime_provider()
+    engine = DreamEngine()
+    report = engine.run(hours=24, max_runtime_seconds=6 * 3600)
 
     if report:
         logger.info("Dream consolidation complete: score=%.3f, proposals generated", report.avg_score)

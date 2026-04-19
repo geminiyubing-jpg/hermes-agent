@@ -179,14 +179,14 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         )
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBHOOK_AVAILABLE", True),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)),
-            patch("gateway.platforms.feishu.release_scoped_lock"),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBHOOK_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)),
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock"),
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
-            patch("gateway.platforms.feishu.web", web_module),
+            patch("gateway.platforms.feishu.adapter.web", web_module),
         ):
             _mock_event_dispatcher_builder(mock_handler_class)
             connected = asyncio.run(adapter.connect())
@@ -207,14 +207,14 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         ws_client = SimpleNamespace()
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
-            patch("gateway.platforms.feishu.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.FeishuWSClient", return_value=ws_client),
-            patch("gateway.platforms.feishu._run_official_feishu_ws_client"),
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)) as acquire_lock,
-            patch("gateway.platforms.feishu.release_scoped_lock") as release_lock,
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.FeishuWSClient", return_value=ws_client),
+            patch("gateway.platforms.feishu.adapter._run_official_feishu_ws_client"),
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)) as acquire_lock,
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock") as release_lock,
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
         ):
@@ -232,7 +232,7 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
                     return False
 
             try:
-                with patch("gateway.platforms.feishu.asyncio.get_running_loop", return_value=_Loop()):
+                with patch("gateway.platforms.feishu.adapter.asyncio.get_running_loop", return_value=_Loop()):
                     connected = asyncio.run(adapter.connect())
                     asyncio.run(adapter.disconnect())
             finally:
@@ -258,10 +258,10 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         adapter = FeishuAdapter(PlatformConfig())
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
             patch(
-                "gateway.platforms.feishu.acquire_scoped_lock",
+                "gateway.platforms.feishu.adapter.acquire_scoped_lock",
                 return_value=(False, {"pid": 4321}),
             ),
         ):
@@ -285,15 +285,15 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         sleeps = []
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
-            patch("gateway.platforms.feishu.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.FeishuWSClient", return_value=ws_client),
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)),
-            patch("gateway.platforms.feishu.release_scoped_lock"),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.FeishuWSClient", return_value=ws_client),
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)),
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock"),
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
-            patch("gateway.platforms.feishu.asyncio.sleep", side_effect=lambda delay: sleeps.append(delay)),
+            patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=lambda delay: sleeps.append(delay)),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
         ):
             _mock_event_dispatcher_builder(mock_handler_class)
@@ -317,7 +317,7 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
 
             fake_loop = _Loop()
             try:
-                with patch("gateway.platforms.feishu.asyncio.get_running_loop", return_value=fake_loop):
+                with patch("gateway.platforms.feishu.adapter.asyncio.get_running_loop", return_value=fake_loop):
                     connected = asyncio.run(adapter.connect())
             finally:
                 loop.close()
@@ -350,7 +350,7 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.edit_message(
                     chat_id="oc_chat",
@@ -394,7 +394,7 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.edit_message(
                     chat_id="oc_chat",
@@ -438,7 +438,7 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             info = asyncio.run(adapter.get_chat_info("oc_chat"))
 
         self.assertEqual(chat_api.request.chat_id, "oc_chat")
@@ -611,7 +611,7 @@ class TestAdapterBehavior(unittest.TestCase):
                 calls.append("builder")
                 return _Builder()
 
-        with patch("gateway.platforms.feishu.EventDispatcherHandler", _Dispatcher):
+        with patch("gateway.platforms.feishu.adapter.EventDispatcherHandler", _Dispatcher):
             handler = adapter._build_event_handler()
 
         self.assertEqual(handler, "handler")
@@ -656,7 +656,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             reaction_id = asyncio.run(adapter._add_ack_reaction("om_msg"))
 
         self.assertEqual(reaction_id, "r_typing")
@@ -681,7 +681,7 @@ class TestAdapterBehavior(unittest.TestCase):
             return func(*args, **kwargs)
 
         with (
-            patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct),
+            patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct),
             self.assertLogs("gateway.platforms.feishu", level="WARNING") as logs,
         ):
             reaction_id = asyncio.run(adapter._add_ack_reaction("om_msg"))
@@ -706,7 +706,7 @@ class TestAdapterBehavior(unittest.TestCase):
         )
         data = SimpleNamespace(event=event)
 
-        with patch("gateway.platforms.feishu.asyncio.run_coroutine_threadsafe") as run_threadsafe:
+        with patch("gateway.platforms.feishu.adapter.asyncio.run_coroutine_threadsafe") as run_threadsafe:
             adapter._on_reaction_event("im.message.reaction.created_v1", data)
 
         run_threadsafe.assert_not_called()
@@ -1431,7 +1431,7 @@ class TestAdapterBehavior(unittest.TestCase):
             coro.close()
             return future
 
-        with patch("gateway.platforms.feishu.asyncio.run_coroutine_threadsafe", side_effect=_submit) as submit:
+        with patch("gateway.platforms.feishu.adapter.asyncio.run_coroutine_threadsafe", side_effect=_submit) as submit:
             adapter._on_message_event(data)
 
         self.assertTrue(submit.called)
@@ -1527,7 +1527,7 @@ class TestAdapterBehavior(unittest.TestCase):
             return None
 
         async def _run() -> None:
-            with patch("gateway.platforms.feishu.asyncio.sleep", side_effect=_sleep):
+            with patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=_sleep):
                 await adapter._dispatch_inbound_event(
                     MessageEvent(text="A", message_type=MessageType.TEXT, source=source, message_id="om_1")
                 )
@@ -1573,7 +1573,7 @@ class TestAdapterBehavior(unittest.TestCase):
             return None
 
         async def _run() -> None:
-            with patch("gateway.platforms.feishu.asyncio.sleep", side_effect=_sleep):
+            with patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=_sleep):
                 await adapter._dispatch_inbound_event(
                     MessageEvent(text="A", message_type=MessageType.TEXT, source=source, message_id="om_1")
                 )
@@ -1617,7 +1617,7 @@ class TestAdapterBehavior(unittest.TestCase):
             return None
 
         async def _run() -> None:
-            with patch("gateway.platforms.feishu.asyncio.sleep", side_effect=_sleep):
+            with patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=_sleep):
                 await adapter._dispatch_inbound_event(
                     MessageEvent(
                         text="第一张",
@@ -1659,7 +1659,7 @@ class TestAdapterBehavior(unittest.TestCase):
         adapter.send_image_file = AsyncMock(return_value=SimpleNamespace(success=True, message_id="om_img"))
 
         async def _run():
-            with patch("gateway.platforms.feishu.cache_image_from_url", new=AsyncMock(return_value="/tmp/cached.png")):
+            with patch("gateway.platforms.feishu.adapter.cache_image_from_url", new=AsyncMock(return_value="/tmp/cached.png")):
                 return await adapter.send_image("oc_chat", "https://example.com/cat.png", caption="cat")
 
         result = asyncio.run(_run())
@@ -1804,7 +1804,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -1853,8 +1853,8 @@ class TestAdapterBehavior(unittest.TestCase):
             sleeps.append(delay)
 
         with (
-            patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct),
-            patch("gateway.platforms.feishu.asyncio.sleep", side_effect=_sleep),
+            patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct),
+            patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=_sleep),
         ):
             result = asyncio.run(adapter.send(chat_id="oc_chat", content="hello retry"))
 
@@ -1896,8 +1896,8 @@ class TestAdapterBehavior(unittest.TestCase):
             sleeps.append(delay)
 
         with (
-            patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct),
-            patch("gateway.platforms.feishu.asyncio.sleep", side_effect=_sleep),
+            patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct),
+            patch("gateway.platforms.feishu.adapter.asyncio.sleep", side_effect=_sleep),
         ):
             result = asyncio.run(adapter.send(chat_id="oc_chat", content="bad payload"))
 
@@ -1946,7 +1946,7 @@ class TestAdapterBehavior(unittest.TestCase):
             file_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(
                     adapter.send_document(
                         chat_id="oc_chat",
@@ -2002,7 +2002,7 @@ class TestAdapterBehavior(unittest.TestCase):
             file_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(adapter.send_document(chat_id="oc_chat", file_path=file_path))
         finally:
             os.unlink(file_path)
@@ -2055,7 +2055,7 @@ class TestAdapterBehavior(unittest.TestCase):
             file_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(
                     adapter.send_document(chat_id="oc_chat", file_path=file_path, caption="报告请看")
                 )
@@ -2109,7 +2109,7 @@ class TestAdapterBehavior(unittest.TestCase):
             image_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(adapter.send_image_file(chat_id="oc_chat", image_path=image_path))
         finally:
             os.unlink(image_path)
@@ -2162,7 +2162,7 @@ class TestAdapterBehavior(unittest.TestCase):
             image_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(
                     adapter.send_image_file(chat_id="oc_chat", image_path=image_path, caption="截图说明")
                 )
@@ -2216,7 +2216,7 @@ class TestAdapterBehavior(unittest.TestCase):
             video_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(adapter.send_video(chat_id="oc_chat", video_path=video_path))
         finally:
             os.unlink(video_path)
@@ -2267,7 +2267,7 @@ class TestAdapterBehavior(unittest.TestCase):
             audio_path = tmp.name
 
         try:
-            with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+            with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
                 result = asyncio.run(adapter.send_voice(chat_id="oc_chat", audio_path=audio_path))
         finally:
             os.unlink(audio_path)
@@ -2351,7 +2351,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -2394,7 +2394,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -2439,7 +2439,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -2482,7 +2482,7 @@ class TestAdapterBehavior(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -2560,7 +2560,7 @@ class TestPendingInboundQueue(unittest.TestCase):
             return future
 
         with patch(
-            "gateway.platforms.feishu.asyncio.run_coroutine_threadsafe",
+            "gateway.platforms.feishu.adapter.asyncio.run_coroutine_threadsafe",
             side_effect=_submit,
         ) as submit:
             adapter._drain_pending_inbound_events()
@@ -2632,7 +2632,7 @@ class TestPendingInboundQueue(unittest.TestCase):
             return future
 
         with patch(
-            "gateway.platforms.feishu.asyncio.run_coroutine_threadsafe",
+            "gateway.platforms.feishu.adapter.asyncio.run_coroutine_threadsafe",
             side_effect=_submit,
         ) as submit, patch(
             "gateway.platforms.feishu.threading.Thread"
@@ -2910,7 +2910,7 @@ class TestSenderNameResolution(unittest.TestCase):
             contact=SimpleNamespace(v3=SimpleNamespace(user=_ContactAPI()))
         )
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_bob"))
 
         self.assertEqual(result, "Bob")
@@ -2938,7 +2938,7 @@ class TestSenderNameResolution(unittest.TestCase):
             contact=SimpleNamespace(v3=SimpleNamespace(user=_ContactAPI()))
         )
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_expired"))
 
         self.assertEqual(result, "NewName")
@@ -2961,7 +2961,7 @@ class TestSenderNameResolution(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        with patch("gateway.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_broken"))
 
         self.assertIsNone(result)

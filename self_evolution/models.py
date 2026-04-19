@@ -136,6 +136,51 @@ class WasteAnalysis:
         return "\n".join(lines)
 
 
+# ── Code Change Analysis ──────────────────────────────────────────────────
+
+@dataclass
+class CommitInfo:
+    hash_short: str
+    subject: str
+    body: str = ""
+    author: str = ""
+    timestamp: float = 0.0
+    files_changed: int = 0
+    insertions: int = 0
+    deletions: int = 0
+    file_list: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CodeChangeAnalysis:
+    commits: List[CommitInfo] = field(default_factory=list)
+    total_commits: int = 0
+    total_insertions: int = 0
+    total_deletions: int = 0
+    total_files_changed: int = 0
+    authors: List[str] = field(default_factory=list)
+    change_categories: Dict[str, int] = field(default_factory=dict)
+    areas_touched: List[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        if not self.commits:
+            return "代码更新: 无新提交"
+        lines = [
+            f"代码更新: {self.total_commits} commits, "
+            f"+{self.total_insertions}/-{self.total_deletions} lines, "
+            f"{self.total_files_changed} files changed",
+        ]
+        if self.change_categories:
+            cats = ", ".join(f"{k}: {v}" for k, v in self.change_categories.items())
+            lines.append(f"提交类型分布: {cats}")
+        if self.areas_touched:
+            lines.append(f"涉及模块: {', '.join(self.areas_touched)}")
+        lines.append("主要变更:")
+        for c in self.commits[:8]:
+            lines.append(f"  - {c.subject} ({c.hash_short}, +{c.insertions}/-{c.deletions})")
+        return "\n".join(lines)
+
+
 # ── Reflection Report ────────────────────────────────────────────────────
 
 @dataclass
@@ -150,6 +195,7 @@ class ReflectionReport:
     best_patterns: List[str] = field(default_factory=list)
     tool_insights: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     recommendations: List[str] = field(default_factory=list)
+    code_change_summary: str = ""
     model_used: str = ""
     created_at: float = field(default_factory=_now)
 
@@ -165,6 +211,7 @@ class ReflectionReport:
             "best_patterns": json.dumps(self.best_patterns, ensure_ascii=False),
             "tool_insights": json.dumps(self.tool_insights, ensure_ascii=False),
             "recommendations": json.dumps(self.recommendations, ensure_ascii=False),
+            "code_change_summary": self.code_change_summary,
             "model_used": self.model_used,
             "created_at": self.created_at,
         }
