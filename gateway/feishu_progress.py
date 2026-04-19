@@ -26,6 +26,14 @@ _MIN_UPDATE_INTERVAL = float(os.getenv("HERMES_PROGRESS_INTERVAL", "10"))
 # Status icons for step display (module-level constant to avoid per-call dict creation).
 _STATUS_ICONS = {"pending": "⏳", "running": "🔄", "done": "✅", "failed": "❌"}
 
+# Mapping from todo tool status to ProgressCard step status.
+_TODO_STATUS_MAP = {
+    "pending": "pending",
+    "in_progress": "running",
+    "completed": "done",
+    "cancelled": "failed",
+}
+
 # Keywords used to detect existing quality-check steps so finalize() doesn't duplicate.
 _QUALITY_STEP_KEYWORDS = frozenset({
     "质量", "验收", "检查", "quality", "verify", "check",
@@ -94,6 +102,51 @@ class ProgressCard:
     def set_steps(self, step_names: List[str]) -> None:
         """Define the step list (called by gateway after agent analysis)."""
         self._steps = [StepInfo(name=n) for n in step_names]
+
+    @property
+    def steps(self) -> List[StepInfo]:
+        """Read-only access to the step list."""
+        return self._steps
+
+    def sync_from_todos(self, todos: List[Dict[str, str]]) -> None:
+        """Sync step status from todo tool results.
+
+        Maps todo item status to ProgressCard step status:
+          pending → pending, in_progress → running,
+          completed → done, cancelled → failed
+
+        Args:
+            todos: list of {"id": "step_N", "content": "...", "status": "..."}
+        """
+        if not self._steps:
+            return
+
+        changed = False
+        for todo_item in todos:
+            try:
+                idx = int(todo_item.get("id", "").replace("step_", "")) - 1
+            except (ValueError, AttributeError):
+                continue
+            if 0 <= idx < len(self._steps):
+                new_status = _TODO_STATUS_MAP.get(todo_item.get("status", ""), "pending")
+                if self._steps[idx].status != new_status:
+                    self._steps[idx].status = new_status
+                    changed = True
+                    if new_status == "running" and not self._steps[idx].started_at:
+                        self._steps[idx].started_at = time.time()
+
+        if changed:
+            self._current_tool = "todo_sync"
+            self._last_update_ts = 0  # Force update regardless of rate limit
+            try:
+                from hermes_plugins.feishu_enhanced.session_store import store
+                loop = store.gateway_loop
+                if loop and not loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(self._do_edit(), loop)
+                else:
+                    logger.debug("[progress-card] sync_from_todos: no gateway loop")
+            except Exception as exc:
+                logger.debug("[progress-card] sync_from_todos error: %s", exc)
 
     async def update_progress(self, current_tool: str = "", step_index: int = -1,
                               step_status: str = "", step_detail: str = "") -> None:

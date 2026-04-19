@@ -159,6 +159,24 @@ class FeishuCardHandlerMixin:
         if proposal_id:
             return self._handle_evolution_card_action(event=event, action_value=action_value, loop=loop)
 
+        # Task plan approval callbacks (approve/modify from feishu-enhanced plugin)
+        task_plan_action = action_value.get("task_plan_action") if isinstance(action_value, dict) else None
+        if task_plan_action:
+            context = getattr(event, "context", None)
+            chat_id = str(getattr(context, "open_chat_id", "") or "")
+            return self._handle_task_plan_action(
+                event=event, action_value=action_value, loop=loop, chat_id=chat_id,
+            )
+
+        # Task confirm callbacks (plan/execute from feishu-enhanced plugin)
+        task_confirm_action = action_value.get("task_confirm_action") if isinstance(action_value, dict) else None
+        if task_confirm_action:
+            context = getattr(event, "context", None)
+            chat_id = str(getattr(context, "open_chat_id", "") or "")
+            return self._handle_task_confirm_action(
+                event=event, action_value=action_value, loop=loop, chat_id=chat_id,
+            )
+
         self._submit_on_loop(loop, self._handle_card_action_event(data))
         if P2CardActionTriggerResponse is None:
             return None
@@ -256,6 +274,174 @@ class FeishuCardHandlerMixin:
             logger.info("Evolution proposal %s %s by %s", proposal_id, action, user_name)
         except Exception as exc:
             logger.error("Failed to resolve evolution proposal from Feishu button: %s", exc)
+
+    # -- task plan card action (feishu-enhanced plugin) -----------------------
+
+    def _handle_task_plan_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any, chat_id: str) -> Any:
+        """Handle plan approval card button clicks (confirm/modify).
+
+        Buttons carry ``task_plan_action`` values set by the feishu-enhanced
+        plugin's ``task_plan_card.build_plan_card()``.
+
+        Flow:
+          - approve: transition PlanState → approved, schedule ProgressCard,
+            send synthetic message to trigger agent execution.
+          - modify:  transition PlanState → planning (user types feedback in chat).
+        """
+        action = action_value.get("task_plan_action", "")
+
+        operator = getattr(event, "operator", None)
+        open_id = str(getattr(operator, "open_id", "") or "")
+        user_name = self._get_cached_sender_name(open_id) or open_id
+
+        try:
+            from hermes_plugins.feishu_enhanced.session_store import store
+            from hermes_plugins.feishu_enhanced.plan_state import get_state
+
+            session = store.find_session_by_chat_id(chat_id)
+            if session:
+                state = get_state(session.session_id)
+
+                if action == "approve":
+                    result = state.approve()
+                    if result.get("status") == "approved":
+                        self._submit_on_loop(
+                            loop,
+                            self._create_plan_progress(session.session_id, chat_id, result),
+                        )
+                        self._submit_on_loop(
+                            loop,
+                            self._send_plan_synthetic(chat_id, open_id, "确认执行方案"),
+                        )
+                elif action == "modify":
+                    state.modify("")
+                    # No synthetic message — resolved card tells user to type feedback.
+                    # Their next chat message triggers the agent in PLANNING mode.
+        except Exception as exc:
+            logger.warning("[Feishu] task_plan_action handler error: %s", exc)
+
+        # Build inline resolved card (sync client update).
+        resolved_card_data = None
+        try:
+            from hermes_plugins.feishu_enhanced.task_plan_card import build_resolved_card
+            resolved_card_data = build_resolved_card(action, user_name)
+        except Exception:
+            resolved_card_data = {
+                "config": {"wide_screen_mode": True},
+                "header": {"title": {"content": "已处理", "tag": "plain_text"}, "template": "grey"},
+                "elements": [],
+            }
+
+        if P2CardActionTriggerResponse is None:
+            return None
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None and resolved_card_data:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = resolved_card_data
+            response.card = card
+        return response
+
+    async def _create_plan_progress(self, session_id: str, chat_id: str, plan_data: dict) -> None:
+        """Create and send a ProgressCard after plan approval."""
+        try:
+            from hermes_plugins.feishu_enhanced.session_store import store
+            from gateway.feishu_progress import ProgressCard
+
+            adapter = store.get_adapter(session_id) or self
+            card = ProgressCard(
+                adapter=adapter,
+                chat_id=chat_id,
+                metadata={"session_id": session_id},
+            )
+            subtasks = plan_data.get("subtasks", [])
+            if subtasks and hasattr(card, "set_steps"):
+                card.set_steps(subtasks)
+
+            await card.send_initial(plan_data.get("goal", "")[:200])
+
+            session = store.get_or_create(session_id)
+            session.progress_card = card
+            logger.info("[Feishu] Progress card created for session %s", session_id[:20])
+        except Exception as exc:
+            logger.warning("[Feishu] Failed to create progress card: %s", exc)
+
+    async def _send_plan_synthetic(self, chat_id: str, open_id: str, text: str) -> None:
+        """Send a synthetic message to trigger agent execution after plan approval."""
+        try:
+            sender_id = SimpleNamespace(open_id=open_id, user_id=None, union_id=None)
+            sender_profile = await self._resolve_sender_profile(sender_id)
+            chat_info = await self.get_chat_info(chat_id)
+            source = self.build_source(
+                chat_id=chat_id,
+                chat_name=chat_info.get("name") or chat_id or "Feishu Chat",
+                chat_type=self._resolve_source_chat_type(chat_info=chat_info, event_chat_type="group"),
+                user_id=sender_profile["user_id"],
+                user_name=sender_profile["user_name"],
+                thread_id=None,
+                user_id_alt=sender_profile["user_id_alt"],
+            )
+            from gateway.platforms.base import MessageEvent, MessageType
+            synthetic_event = MessageEvent(
+                text=text,
+                message_type=MessageType.COMMAND,
+                source=source,
+                raw_message=None,
+                message_id=str(uuid.uuid4()),
+                timestamp=datetime.now(),
+            )
+            await self._handle_message_with_guards(synthetic_event)
+        except Exception as exc:
+            logger.warning("[Feishu] Plan synthetic message failed: %s", exc)
+
+    # -- task confirm card action (feishu-enhanced plugin) --------------------
+
+    def _handle_task_confirm_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any, chat_id: str) -> Any:
+        """Handle task confirmation card button clicks (plan/execute).
+
+        Buttons carry ``task_confirm_action`` values set by the feishu-enhanced
+        plugin's ``confirm_card.build_confirm_card()``.
+        """
+        action = action_value.get("task_confirm_action", "")
+
+        operator = getattr(event, "operator", None)
+        open_id = str(getattr(operator, "open_id", "") or "")
+        user_name = self._get_cached_sender_name(open_id) or open_id
+
+        try:
+            from hermes_plugins.feishu_enhanced.session_store import store
+            session = store.find_session_by_chat_id(chat_id)
+            if session:
+                if action == "plan":
+                    session.force_plan = True
+                elif action == "execute":
+                    session.force_plan = False
+        except Exception as exc:
+            logger.warning("[Feishu] task_confirm_action handler error: %s", exc)
+
+        # Build inline resolved card.
+        resolved_card_data = None
+        try:
+            from hermes_plugins.feishu_enhanced.confirm_card import build_confirm_resolved_card
+            resolved_card_data = build_confirm_resolved_card(action, user_name)
+        except Exception:
+            resolved_card_data = {
+                "config": {"wide_screen_mode": True},
+                "header": {"title": {"content": "已处理", "tag": "plain_text"}, "template": "grey"},
+                "elements": [],
+            }
+
+        if P2CardActionTriggerResponse is None:
+            return None
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None and resolved_card_data:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = resolved_card_data
+            response.card = card
+        return response
+
+    # -- approval resolution -------------------------------------------------
 
     async def _resolve_approval(self, approval_id: Any, choice: str, user_name: str) -> None:
         """Pop approval state and unblock the waiting agent thread."""
