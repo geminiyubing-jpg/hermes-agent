@@ -696,6 +696,143 @@ class TestIsConnectionError:
         assert _is_connection_error(err) is False
 
 
+class TestKimiForCodingTemperature:
+    """Moonshot kimi-for-coding models require fixed temperatures.
+
+    k2.5 / k2-turbo-preview / k2-0905-preview → 0.6 (non-thinking lock).
+    k2-thinking / k2-thinking-turbo → 1.0 (thinking lock).
+    kimi-k2-instruct* and every other model preserve the caller's temperature.
+    """
+
+    def test_build_call_kwargs_forces_fixed_temperature(self):
+        from agent.auxiliary_client import _build_call_kwargs
+
+        kwargs = _build_call_kwargs(
+            provider="kimi-coding",
+            model="kimi-for-coding",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.3,
+        )
+
+        assert kwargs["temperature"] == 0.6
+
+    def test_build_call_kwargs_injects_temperature_when_missing(self):
+        from agent.auxiliary_client import _build_call_kwargs
+
+        kwargs = _build_call_kwargs(
+            provider="kimi-coding",
+            model="kimi-for-coding",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=None,
+        )
+
+        assert kwargs["temperature"] == 0.6
+
+    def test_auto_routed_kimi_for_coding_sync_call_uses_fixed_temperature(self):
+        client = MagicMock()
+        client.base_url = "https://api.kimi.com/coding/v1"
+        response = MagicMock()
+        client.chat.completions.create.return_value = response
+
+        with patch(
+            "agent.auxiliary_client._get_cached_client",
+            return_value=(client, "kimi-for-coding"),
+        ), patch(
+            "agent.auxiliary_client._resolve_task_provider_model",
+            return_value=("auto", "kimi-for-coding", None, None, None),
+        ):
+            result = call_llm(
+                task="session_search",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0.1,
+            )
+
+        assert result is response
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "kimi-for-coding"
+        assert kwargs["temperature"] == 0.6
+
+    @pytest.mark.asyncio
+    async def test_auto_routed_kimi_for_coding_async_call_uses_fixed_temperature(self):
+        client = MagicMock()
+        client.base_url = "https://api.kimi.com/coding/v1"
+        response = MagicMock()
+        client.chat.completions.create = AsyncMock(return_value=response)
+
+        with patch(
+            "agent.auxiliary_client._get_cached_client",
+            return_value=(client, "kimi-for-coding"),
+        ), patch(
+            "agent.auxiliary_client._resolve_task_provider_model",
+            return_value=("auto", "kimi-for-coding", None, None, None),
+        ):
+            result = await async_call_llm(
+                task="session_search",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0.1,
+            )
+
+        assert result is response
+        kwargs = client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == "kimi-for-coding"
+        assert kwargs["temperature"] == 0.6
+
+    @pytest.mark.parametrize(
+        "model,expected",
+        [
+            ("kimi-k2.5", 0.6),
+            ("kimi-k2-turbo-preview", 0.6),
+            ("kimi-k2-0905-preview", 0.6),
+            ("kimi-k2-thinking", 1.0),
+            ("kimi-k2-thinking-turbo", 1.0),
+            ("moonshotai/kimi-k2.5", 0.6),
+            ("moonshotai/Kimi-K2-Thinking", 1.0),
+        ],
+    )
+    def test_kimi_k2_family_temperature_override(self, model, expected):
+        """Moonshot kimi-k2.* models only accept fixed temperatures.
+
+        Non-thinking models → 0.6, thinking-mode models → 1.0.
+        """
+        from agent.auxiliary_client import _build_call_kwargs
+
+        kwargs = _build_call_kwargs(
+            provider="kimi-coding",
+            model=model,
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.3,
+        )
+
+        assert kwargs["temperature"] == expected
+
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "anthropic/claude-sonnet-4-6",
+            "gpt-5.4",
+            # kimi-k2-instruct is the non-coding K2 family — temperature is
+            # variable (recommended 0.6 but not enforced).  Must not clamp.
+            "kimi-k2-instruct",
+            "moonshotai/Kimi-K2-Instruct",
+            "moonshotai/Kimi-K2-Instruct-0905",
+            "kimi-k2-instruct-0905",
+            # Hypothetical future kimi name not in the whitelist.
+            "kimi-k2-experimental",
+        ],
+    )
+    def test_non_restricted_model_preserves_temperature(self, model):
+        from agent.auxiliary_client import _build_call_kwargs
+
+        kwargs = _build_call_kwargs(
+            provider="openrouter",
+            model=model,
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.3,
+        )
+
+        assert kwargs["temperature"] == 0.3
+
+
 # ---------------------------------------------------------------------------
 # async_call_llm payment / connection fallback (#7512 bug 2)
 # ---------------------------------------------------------------------------

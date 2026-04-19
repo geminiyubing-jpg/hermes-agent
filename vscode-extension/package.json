@@ -1,0 +1,139 @@
+{
+  "name": "hermes-vscode",
+  "displayName": "Hermes Agent",
+  "description": "Hermes AI Agent for VS Code: Self-improving AI coding assistant",
+  "version": "0.1.0",
+  "publisher": "hermes-agent",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": ["AI", "Chat"],
+  "keywords": ["hermes", "ai", "coding-assistant", "agent", "mcp"],
+  "activationEvents": ["onStartupFinished"],
+  "icon": "resources/hermes-logo.png",
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Hermes Agent",
+      "properties": {
+        "hermes.cliCommand": {
+          "type": "string",
+          "default": "hermes",
+          "description": "Command to invoke the Hermes CLI"
+        },
+        "hermes.workingDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Working directory for CLI (defaults to workspace root)"
+        },
+        "hermes.includeActiveFile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically include the active file as context"
+        },
+        "hermes.preferredLocation": {
+          "type": "string",
+          "enum": ["sidebar", "panel"],
+          "enumDescriptions": ["Sidebar (Right)", "Panel (New Tab)"],
+          "default": "panel",
+          "description": "Where Hermes opens by default"
+        },
+        "hermes.autosave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically save files before Hermes reads or writes them"
+        },
+        "hermes.useCtrlEnterToSend": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use Ctrl/Cmd+Enter to send prompts instead of just Enter"
+        },
+        "hermes.environmentVariables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "Environment variable name" },
+              "value": { "type": "string", "description": "Environment variable value" }
+            },
+            "required": ["name", "value"]
+          },
+          "default": [],
+          "description": "Environment variables to set when launching Hermes"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "hermes.open",
+        "title": "Hermes: Open",
+        "icon": { "light": "resources/hermes-logo.svg", "dark": "resources/hermes-logo.svg" }
+      },
+      {
+        "command": "hermes.openInTab",
+        "title": "Hermes: Open in New Tab",
+        "icon": { "light": "resources/hermes-logo.svg", "dark": "resources/hermes-logo.svg" }
+      },
+      {
+        "command": "hermes.openInSidebar",
+        "title": "Hermes: Open in Side Bar",
+        "icon": { "light": "resources/hermes-logo.svg", "dark": "resources/hermes-logo.svg" }
+      },
+      {
+        "command": "hermes.newConversation",
+        "title": "Hermes: New Conversation"
+      },
+      {
+        "command": "hermes.focus",
+        "title": "Hermes: Focus input"
+      },
+      {
+        "command": "hermes.stop",
+        "title": "Hermes: Stop generation"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "hermes.focus",
+        "key": "cmd+escape",
+        "mac": "cmd+escape",
+        "win": "ctrl+escape",
+        "linux": "ctrl+escape",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "hermes.openInTab",
+        "key": "cmd+shift+escape",
+        "mac": "cmd+shift+escape",
+        "win": "ctrl+shift+escape",
+        "linux": "ctrl+shift+escape"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hermes-sidebar",
+          "title": "Hermes Agent",
+          "icon": "resources/hermes-logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "hermes-sidebar": [
+        {
+          "type": "webview",
+          "id": "hermes.chatView",
+          "name": "Hermes Agent"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "hermes.openInTab",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}
