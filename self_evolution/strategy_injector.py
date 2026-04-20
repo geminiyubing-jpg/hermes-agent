@@ -62,10 +62,17 @@ def invalidate_cache():
     _cached_strategies = None
 
 
+_MAX_INJECT_STRATEGIES = 3     # 最多注入策略数
+_MAX_HINT_CHARS = 100          # 注入提示总字符预算
+_MAX_SINGLE_HINT = 30          # 单条 hint_text 最大字符数
+
 def inject_hints(kwargs: dict) -> Optional[str]:
     """Pre-llm-call hook: inject learned strategy hints.
 
-    Returns a hint string to be appended to the system prompt, or None.
+    Rules:
+      - Strategies without conditions are skipped (must be condition-based).
+      - hint_text longer than _MAX_SINGLE_HINT chars are skipped.
+      - At most _MAX_INJECT_STRATEGIES hints, total ≤ _MAX_HINT_CHARS.
     """
     strategies = _load_active_strategies()
     if not strategies:
@@ -79,8 +86,32 @@ def inject_hints(kwargs: dict) -> Optional[str]:
     if not matched:
         return None
 
-    # Format hints
-    return _engine.format_hints(matched)
+    # Filter: require conditions and enforce hint length
+    eligible = []
+    for s in matched:
+        if not s.conditions:
+            continue  # Skip unconditioned strategies
+        if len(s.hint_text.strip()) > _MAX_SINGLE_HINT:
+            continue  # Skip overly long hints
+        eligible.append(s)
+
+    if not eligible:
+        return None
+
+    # Deduplicate by hint_text content
+    seen_hints: set[str] = set()
+    unique: list = []
+    for s in eligible:
+        key = s.hint_text.strip().lower()
+        if key not in seen_hints:
+            seen_hints.add(key)
+            unique.append(s)
+
+    # Cap count
+    selected = unique[:_MAX_INJECT_STRATEGIES]
+
+    # Format hints within char budget
+    return _engine.format_hints(selected, max_chars=_MAX_HINT_CHARS)
 
 
 def _build_context(kwargs: dict) -> dict:

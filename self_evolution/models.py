@@ -222,7 +222,7 @@ class ReflectionReport:
 @dataclass
 class Proposal:
     id: str
-    proposal_type: str  # skill | strategy | memory | tool_preference
+    proposal_type: str  # skill | strategy | memory | tool_preference | code_improvement
     title: str
     description: str
     expected_impact: str = ""

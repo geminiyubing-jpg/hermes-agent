@@ -52,6 +52,8 @@ class EvolutionExecutor:
                     self._update_memory(proposal)
                 case "tool_preference":
                     self._update_tool_preference(proposal)
+                case "code_improvement":
+                    self._save_optimization_request(proposal)
 
             # Mark as executed
             db.update(
@@ -133,6 +135,13 @@ class EvolutionExecutor:
         store = StrategyStore()
         current = store.load()
 
+        # Check for duplicate strategies by title similarity
+        rules = current.get("rules", [])
+        existing_titles = {r.get("name", "").strip().lower() for r in rules}
+        if proposal.title.strip().lower() in existing_titles:
+            logger.warning("Skipping duplicate strategy: %s", proposal.title)
+            return
+
         # Archive current version
         version = current.get("version", 0) + 1
         store.archive(version - 1)
@@ -150,7 +159,6 @@ class EvolutionExecutor:
         }
 
         # Add to strategies
-        rules = current.get("rules", [])
         rules.append(new_strategy)
         current["rules"] = rules
         current["version"] = version
@@ -289,3 +297,29 @@ class EvolutionExecutor:
             where="id = ?",
             where_params=(unit.id,),
         )
+
+    # ── Code Improvement (save request document) ────────────────────────────
+
+    def _save_optimization_request(self, proposal: Proposal):
+        """Save a code improvement request as a document.
+
+        Does NOT auto-modify code. The user reviews the request and decides
+        whether to implement changes manually or via Claude Code.
+        """
+        req_dir = DATA_DIR / "optimization_requests"
+        req_dir.mkdir(parents=True, exist_ok=True)
+        doc_path = req_dir / f"{proposal.id}.md"
+
+        doc_content = (
+            f"# 程序优化需求\n\n"
+            f"**标题**: {proposal.title}\n"
+            f"**预期影响**: {proposal.expected_impact}\n"
+            f"**风险评估**: {proposal.risk_assessment}\n"
+            f"**回滚方案**: {proposal.rollback_plan}\n"
+            f"**创建时间**: {time.strftime('%Y-%m-%d %H:%M', time.localtime())}\n\n"
+            f"---\n\n"
+            f"{proposal.description}\n"
+        )
+
+        doc_path.write_text(doc_content, encoding="utf-8")
+        logger.info("Saved optimization request: %s", doc_path)

@@ -166,7 +166,22 @@ class DreamEngine:
                 db.insert("evolution_proposals", p.to_db_row())
             logger.info("Generated %d evolution proposals", len(proposals))
 
-            # 10. Cleanup old data
+            # 10. Compress existing strategies
+            try:
+                from self_evolution.strategy_compressor import compress_strategies
+                from self_evolution.strategy_store import StrategyStore
+                store = StrategyStore()
+                data = store.load()
+                rules = data.get("rules", [])
+                compressed = compress_strategies(rules)
+                if len(compressed) < len(rules):
+                    data["rules"] = compressed
+                    store.save(data)
+                    logger.info("Strategies compressed: %d → %d", len(rules), len(compressed))
+            except Exception as exc:
+                logger.warning("Strategy compression failed: %s", exc)
+
+            # 11. Cleanup old data
             db.cleanup(days=30)
 
             return report

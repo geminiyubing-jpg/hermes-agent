@@ -804,12 +804,13 @@ class TestStrategyStore:
 class TestEvolutionProposer:
     """Test proposal generation from reflection reports."""
 
-    def _make_report(self, worst=None, best=None, recs=None):
+    def _make_report(self, worst=None, best=None, recs=None, sessions=10):
         from self_evolution.models import ReflectionReport
 
         return ReflectionReport(
             period_start=1000.0,
             period_end=2000.0,
+            sessions_analyzed=sessions,
             worst_patterns=worst or ["bash timeout frequently"],
             best_patterns=best or ["single-turn code generation works well"],
             recommendations=recs or ["创建新的工具偏好来优化bash使用"],
@@ -822,21 +823,45 @@ class TestEvolutionProposer:
         proposals = generate_proposals(report, report_id=1)
         assert len(proposals) > 0
 
-    def test_error_pattern_creates_strategy_proposal(self):
+    def test_error_pattern_creates_code_improvement_proposal(self):
         from self_evolution.evolution_proposer import generate_proposals
 
         report = self._make_report(worst=["tool failure pattern"])
         proposals = generate_proposals(report, report_id=1)
-        strategy_proposals = [p for p in proposals if p.proposal_type == "strategy"]
-        assert len(strategy_proposals) > 0
+        code_proposals = [p for p in proposals if p.proposal_type == "code_improvement"]
+        assert len(code_proposals) > 0
+        # Verify structured description
+        desc = code_proposals[0].description
+        assert "问题描述" in desc
+        assert "建议方向" in desc
 
     def test_success_pattern_creates_skill_proposal(self):
         from self_evolution.evolution_proposer import generate_proposals
 
-        report = self._make_report(best=["efficient workflow discovered"])
+        # Report with enough sessions to pass the ≥5 threshold
+        report = self._make_report(
+            best=["efficient workflow discovered"],
+            sessions=10,
+        )
         proposals = generate_proposals(report, report_id=1)
         skill_proposals = [p for p in proposals if p.proposal_type == "skill"]
         assert len(skill_proposals) > 0
+
+    def test_success_pattern_skipped_below_threshold(self):
+        """Skill proposals should not be generated from best_patterns with <5 sessions."""
+        from self_evolution.evolution_proposer import generate_proposals
+
+        report = self._make_report(
+            best=["efficient workflow discovered"],
+            recs=[],  # No recommendations that might create skill proposals
+            sessions=2,  # Below threshold
+        )
+        proposals = generate_proposals(report, report_id=1)
+        skill_from_best = [
+            p for p in proposals
+            if p.proposal_type == "skill" and p.id.startswith("prop-success-")
+        ]
+        assert len(skill_from_best) == 0
 
     def test_recommendation_type_detection(self):
         from self_evolution.evolution_proposer import generate_proposals

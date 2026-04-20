@@ -79,8 +79,12 @@ class StrategyRuleEngine:
         except re.error:
             return False
 
-    def format_hints(self, strategies: List[StrategyRule]) -> str:
-        """Format matched strategies into a system hint string."""
+    def format_hints(self, strategies: List[StrategyRule], max_chars: int = 0) -> str:
+        """Format matched strategies into a system hint string.
+
+        Args:
+            max_chars: If > 0, truncate total output to this many characters.
+        """
         if not strategies:
             return ""
 
@@ -89,6 +93,9 @@ class StrategyRuleEngine:
             type_prefix = {"hint": "💡", "avoid": "⚠️", "prefer": "✅"}.get(
                 s.strategy_type, "💡"
             )
-            lines.append(f"{type_prefix} {s.name}: {s.hint_text}")
+            line = f"{type_prefix} {s.name}: {s.hint_text}"
+            if max_chars and len("\n".join(lines)) + len(line) > max_chars:
+                break
+            lines.append(line)
 
         return "\n".join(lines)

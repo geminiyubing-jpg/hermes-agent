@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""代码统计分析工具 - 分析目录下的代码行数、文件类型分布、注释率"""
+"""代码统计分析工具 - 按目录/类型分组，区分代码行/注释行/空行，ASCII柱状图"""
 
 import os
 import sys
 from pathlib import Path
 from collections import defaultdict
 
-# 文件类型 → (注释单行前缀, 注释多行开始, 注释多行结束)
+# 文件类型 → (单行注释, 多行开始, 多行结束)
 LANG_MAP = {
     ".py":   ("#", '"""', '"""'),
     ".js":   ("//", "/*", "*/"),
@@ -29,7 +29,7 @@ LANG_MAP = {
     ".html": (None, "<!--", "-->"),
     ".css":  (None, "/*", "*/"),
     ".vue":  ("//", "/*", "*/"),
-    ".swift":("//", "/*", "*/"),
+    ".swift": ("//", "/*", "*/"),
     ".kt":   ("//", "/*", "*/"),
     ".lua":  ("--", "--[[", "]]"),
     ".r":    ("#", None, None),
@@ -39,18 +39,16 @@ LANG_MAP = {
 SKIP_DIRS = {
     ".git", ".svn", ".hg", "node_modules", "__pycache__",
     ".venv", "venv", "env", ".env", ".tox", "dist", "build",
-    ".mypy_cache", ".pytest_cache", ".eggs", "*.egg-info",
-    "target", "vendor", ".next", ".nuxt", "coverage",
+    ".mypy_cache", ".pytest_cache", ".eggs", "target", "vendor",
+    ".next", ".nuxt", "coverage",
 }
 
 
 def should_skip(path: Path) -> bool:
-    """判断是否跳过该目录"""
     return any(part in SKIP_DIRS for part in path.parts)
 
 
 def analyze_file(filepath: Path) -> dict:
-    """分析单个文件"""
     ext = filepath.suffix.lower()
     if ext not in LANG_MAP:
         return None
@@ -85,22 +83,43 @@ def analyze_file(filepath: Path) -> dict:
         if line_comment and stripped.startswith(line_comment):
             comment += 1
 
-    code = total - blank - comment
-    return {
-        "ext": ext,
-        "total": total,
-        "code": code,
-        "comment": comment,
-        "blank": blank,
-    }
+    return {"ext": ext, "total": total, "code": total - blank - comment, "comment": comment, "blank": blank}
 
 
-def format_bar(value: int, max_val: int, width: int = 30) -> str:
-    """生成文本进度条"""
+def bar(value, max_val, width=25):
     if max_val == 0:
         return ""
-    filled = int(width * value / max_val)
-    return "█" * filled + "░" * (width - filled)
+    return "█" * int(width * value / max_val) + "░" * (width - int(width * value / max_val))
+
+
+def stacked_bar(code, comment, blank, total, width=30):
+    """三段式柱状图：█代码 ▓注释 ░空行"""
+    if total == 0:
+        return "░" * width
+    cw = int(width * code / total)
+    mw = int(width * comment / total)
+    bw = width - cw - mw
+    return "█" * cw + "▓" * mw + "░" * bw
+
+
+def fmt(n):
+    """数字格式化"""
+    return f"{n:,}"
+
+
+def print_table(title, rows, headers, col_widths, grand_row=None):
+    """通用表格打印"""
+    print(f"\n📁 {title}")
+    header_line = "".join(h.rjust(w) for h, w in zip(headers, col_widths))
+    print(header_line)
+    print("─" * len(header_line))
+
+    for row in rows:
+        print("".join(str(v).rjust(w) for v, w in zip(row, col_widths)))
+
+    if grand_row:
+        print("─" * len(header_line))
+        print("".join(str(v).rjust(w) for v, w in zip(grand_row, col_widths)))
 
 
 def main():
@@ -109,59 +128,89 @@ def main():
         print(f"❌ 不是有效目录: {target}")
         sys.exit(1)
 
-    # 收集文件
-    stats_by_ext = defaultdict(lambda: {"files": 0, "total": 0, "code": 0, "comment": 0, "blank": 0})
-    total_files = 0
-
+    # 收集所有文件的分析结果
+    file_results = []
     for filepath in target.rglob("*"):
         if not filepath.is_file() or should_skip(filepath):
             continue
         result = analyze_file(filepath)
-        if result is None:
-            continue
-        total_files += 1
-        ext = result["ext"]
-        bucket = stats_by_ext[ext]
-        bucket["files"] += 1
-        for k in ("total", "code", "comment", "blank"):
-            bucket[k] += result[k]
+        if result:
+            rel = filepath.relative_to(target)
+            file_results.append({"path": rel, **result})
 
-    if total_files == 0:
+    if not file_results:
         print("未找到可分析的代码文件。")
         return
 
     # 汇总
-    grand = {"files": 0, "total": 0, "code": 0, "comment": 0, "blank": 0}
-    for bucket in stats_by_ext.values():
-        for k in grand:
-            grand[k] += bucket[k]
+    grand = {"files": len(file_results), "total": 0, "code": 0, "comment": 0, "blank": 0}
+    for r in file_results:
+        for k in ("total", "code", "comment", "blank"):
+            grand[k] += r[k]
 
-    # 输出
-    print(f"\n📊 代码统计 — {target.resolve()}\n")
-    print(f"{'类型':<8} {'文件数':>6} {'总行数':>8} {'代码行':>8} {'注释行':>8} {'空行':>8} {'注释率':>8}")
-    print("─" * 62)
-
-    # 按代码行数排序
-    for ext, bucket in sorted(stats_by_ext.items(), key=lambda x: x[1]["code"], reverse=True):
-        comment_rate = bucket["comment"] / max(bucket["code"] + bucket["comment"], 1) * 100
-        print(f"{ext:<8} {bucket['files']:>6} {bucket['total']:>8} {bucket['code']:>8} "
-              f"{bucket['comment']:>8} {bucket['blank']:>8} {comment_rate:>7.1f}%")
-
-    print("─" * 62)
     comment_rate = grand["comment"] / max(grand["code"] + grand["comment"], 1) * 100
-    print(f"{'合计':<8} {grand['files']:>6} {grand['total']:>8} {grand['code']:>8} "
-          f"{grand['comment']:>8} {grand['blank']:>8} {comment_rate:>7.1f}%")
 
-    # 文件类型分布图
-    print(f"\n📁 文件类型分布（按代码行数）")
-    max_code = max(b["code"] for b in stats_by_ext.values()) if stats_by_ext else 1
-    for ext, bucket in sorted(stats_by_ext.items(), key=lambda x: x[1]["code"], reverse=True):
-        bar = format_bar(bucket["code"], max_code)
-        pct = bucket["code"] / max(grand["code"], 1) * 100
-        print(f"  {ext:<8} {bar} {pct:5.1f}%")
+    print(f"\n📊 代码统计 — {target.resolve()}")
+    print(f"   {grand['files']} 个文件 | {fmt(grand['total'])} 行 (代码 {fmt(grand['code'])} / 注释 {fmt(grand['comment'])} / 空行 {fmt(grand['blank'])})")
+    print(f"   代码占比 {grand['code']/max(grand['total'],1)*100:.1f}% | 注释率 {comment_rate:.1f}%")
 
-    print(f"\n✅ 共 {grand['files']} 个文件, {grand['total']:,} 行 (代码 {grand['code']:,} / 注释 {grand['comment']:,} / 空行 {grand['blank']:,})")
-    print(f"   代码占比 {grand['code']/max(grand['total'],1)*100:.1f}% | 注释率 {comment_rate:.1f}%\n")
+    # ── 按目录分组 ──
+    dir_stats = defaultdict(lambda: {"files": 0, "total": 0, "code": 0, "comment": 0, "blank": 0})
+    for r in file_results:
+        top_dir = r["path"].parts[0] if len(r["path"].parts) > 1 else "[root]"
+        bucket = dir_stats[top_dir]
+        bucket["files"] += 1
+        for k in ("total", "code", "comment", "blank"):
+            bucket[k] += r[k]
+
+    headers = ["目录", "文件数", "代码行", "注释行", "空行", "注释率"]
+    col_widths = [16, 8, 10, 10, 10, 9]
+    rows = []
+    for d, b in sorted(dir_stats.items(), key=lambda x: x[1]["code"], reverse=True):
+        cr = b["comment"] / max(b["code"] + b["comment"], 1) * 100
+        rows.append([d, str(b["files"]), fmt(b["code"]), fmt(b["comment"]), fmt(b["blank"]), f"{cr:.1f}%"])
+
+    print_table("按目录分组", rows, headers, col_widths,
+                grand_row=["合计", str(grand["files"]), fmt(grand["code"]), fmt(grand["comment"]), fmt(grand["blank"]), f"{comment_rate:.1f}%"])
+
+    # 按目录柱状图
+    max_code = max(b["code"] for b in dir_stats.values())
+    print(f"\n📊 目录代码量分布")
+    for d, b in sorted(dir_stats.items(), key=lambda x: x[1]["code"], reverse=True):
+        pct = b["code"] / max(grand["code"], 1) * 100
+        print(f"  {d:<14} {bar(b['code'], max_code, 30)} {pct:5.1f}%")
+
+    # ── 按文件类型 ──
+    ext_stats = defaultdict(lambda: {"files": 0, "total": 0, "code": 0, "comment": 0, "blank": 0})
+    for r in file_results:
+        bucket = ext_stats[r["ext"]]
+        bucket["files"] += 1
+        for k in ("total", "code", "comment", "blank"):
+            bucket[k] += r[k]
+
+    headers2 = ["类型", "文件数", "代码行", "注释行", "空行", "注释率"]
+    col_widths2 = [10, 8, 10, 10, 10, 9]
+    rows2 = []
+    for ext, b in sorted(ext_stats.items(), key=lambda x: x[1]["code"], reverse=True):
+        cr = b["comment"] / max(b["code"] + b["comment"], 1) * 100
+        rows2.append([ext, str(b["files"]), fmt(b["code"]), fmt(b["comment"]), fmt(b["blank"]), f"{cr:.1f}%"])
+
+    print_table("按文件类型", rows2, headers2, col_widths2,
+                grand_row=["合计", str(grand["files"]), fmt(grand["code"]), fmt(grand["comment"]), fmt(grand["blank"]), f"{comment_rate:.1f}%"])
+
+    # 按类型柱状图
+    max_code_ext = max(b["code"] for b in ext_stats.values())
+    print(f"\n📊 类型代码量分布")
+    for ext, b in sorted(ext_stats.items(), key=lambda x: x[1]["code"], reverse=True):
+        pct = b["code"] / max(grand["code"], 1) * 100
+        print(f"  {ext:<8} {bar(b['code'], max_code_ext, 30)} {pct:5.1f}%")
+
+    # ── 综合堆叠柱状图（按目录） ──
+    print(f"\n📊 目录代码结构（█代码 ▓注释 ░空行）")
+    for d, b in sorted(dir_stats.items(), key=lambda x: x[1]["code"], reverse=True):
+        print(f"  {d:<14} {stacked_bar(b['code'], b['comment'], b['blank'], b['total'], 40)}")
+
+    print()
 
 
 if __name__ == "__main__":

@@ -223,9 +223,14 @@ class FeishuCardHandlerMixin:
     # -- evolution card action --------------------------------------------------
 
     def _handle_evolution_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
-        """Handle self_evolution proposal card action (approve/modify/reject)."""
+        """Handle self_evolution proposal card action (approve/modify/reject).
+
+        Executes the action synchronously and returns an updated card showing
+        remaining pending proposals, so the card persists for further clicks.
+        """
         action = action_value.get("action", "")
         proposal_id = action_value.get("proposal_id", "")
+        logger.info("[TRACE] evolution card action received: action=%s proposal_id=%s", action, proposal_id)
         if not action or not proposal_id:
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
@@ -233,47 +238,46 @@ class FeishuCardHandlerMixin:
         open_id = str(getattr(operator, "open_id", "") or "")
         user_name = self._get_cached_sender_name(open_id) or open_id
 
-        self._submit_on_loop(loop, self._resolve_evolution_action(action, proposal_id, user_name))
+        # Execute callback synchronously — DB + execution are fast enough
+        callback_result = None
+        try:
+            from self_evolution.feishu_notifier import FeishuNotifier
+            notifier = FeishuNotifier()
+            logger.info("[TRACE] calling handle_callback: action=%s proposal_id=%s user=%s", action, proposal_id, user_name)
+            callback_result = notifier.handle_callback(action, proposal_id)
+            logger.info(
+                "[TRACE] handle_callback done: feedback=%s has_updated_card=%s",
+                callback_result.get("feedback", "") if callback_result else "None",
+                bool(callback_result.get("updated_card")) if callback_result else False,
+            )
+        except Exception as exc:
+            logger.error("Failed to resolve evolution proposal from Feishu button: %s", exc, exc_info=True)
 
         if P2CardActionTriggerResponse is None:
             return None
         response = P2CardActionTriggerResponse()
         if CallBackCard is not None:
-            icon = {"approve": "✅", "modify": "✏️", "reject": "❌"}.get(action, "📋")
-            label = {"approve": "已通过", "modify": "已修改", "reject": "已拒绝"}.get(action, "已处理")
-            template = "red" if action == "reject" else "green" if action == "approve" else "blue"
             card = CallBackCard()
             card.type = "raw"
-            card.data = {
-                "config": {"wide_screen_mode": True},
-                "header": {
-                    "title": {"content": f"{icon} {label}", "tag": "plain_text"},
-                    "template": template,
-                },
-                "elements": [
-                    {"tag": "markdown", "content": f"{icon} **{label}** by {user_name}"},
-                    {"tag": "note", "elements": [
-                        {"tag": "plain_text", "content": f"提案 {proposal_id[:12]}…"},
-                    ]},
-                ],
-            }
+            updated_card = callback_result.get("updated_card") if callback_result else None
+            if updated_card:
+                # Replace with card showing remaining pending proposals
+                card.data = updated_card
+            else:
+                # All proposals processed — show completion
+                feedback = (callback_result or {}).get("feedback", "已处理")
+                card.data = {
+                    "config": {"wide_screen_mode": True},
+                    "header": {
+                        "title": {"content": "Hermes 进化报告 — 全部已处理", "tag": "plain_text"},
+                        "template": "green",
+                    },
+                    "elements": [
+                        {"tag": "markdown", "content": f"{feedback}\n\n所有提案已处理完毕"},
+                    ],
+                }
             response.card = card
         return response
-
-    async def _resolve_evolution_action(self, action: str, proposal_id: str, user_name: str) -> None:
-        """Execute the self_evolution proposal callback.
-
-        NOTE: The current card design only has action buttons (approve/modify/reject)
-        without a text input element, so ``user_input`` is always empty for modify
-        actions.  A future card redesign could add an input field.
-        """
-        try:
-            from self_evolution.feishu_notifier import FeishuNotifier
-            notifier = FeishuNotifier()
-            notifier.handle_callback(action, proposal_id)
-            logger.info("Evolution proposal %s %s by %s", proposal_id, action, user_name)
-        except Exception as exc:
-            logger.error("Failed to resolve evolution proposal from Feishu button: %s", exc)
 
     # -- task plan card action (feishu-enhanced plugin) -----------------------
 
