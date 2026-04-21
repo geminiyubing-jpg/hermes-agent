@@ -67,10 +67,15 @@ SUPPORTED_POOL_STRATEGIES = {
 }
 
 # Cooldown before retrying an exhausted credential.
-# 429 (rate-limited) and 402 (billing/quota) both cool down after 1 hour.
 # Provider-supplied reset_at timestamps override these defaults.
 EXHAUSTED_TTL_429_SECONDS = 60 * 60          # 1 hour
 EXHAUSTED_TTL_DEFAULT_SECONDS = 60 * 60      # 1 hour
+
+# Server-side overload errors (not user quota) recover much faster.
+# These are provider-specific sub-codes carried in the response body,
+# not the HTTP status code itself.
+_SERVER_OVERLOAD_CODES = frozenset({"1305", "1306", "1307", "1312", "500"})
+EXHAUSTED_TTL_SERVER_OVERLOAD_SECONDS = 3 * 60  # 3 minutes
 
 # Pool key prefix for custom OpenAI-compatible endpoints.
 # Custom endpoints all share provider='custom' but are keyed by their
@@ -187,8 +192,17 @@ def _is_manual_source(source: str) -> bool:
     return normalized == SOURCE_MANUAL or normalized.startswith(f"{SOURCE_MANUAL}:")
 
 
-def _exhausted_ttl(error_code: Optional[int]) -> int:
-    """Return cooldown seconds based on the HTTP status that caused exhaustion."""
+def _exhausted_ttl(error_code: Optional[int], error_reason: Optional[str] = None) -> int:
+    """Return cooldown seconds based on the HTTP status and provider sub-code.
+
+    Provider sub-codes (carried in the response body, e.g. ZAI's 1305/1302)
+    are passed via *error_reason* and allow finer-grained cooldowns:
+
+      - 1305/1306/1307/500: server-side overload → 3 min (recovers quickly)
+      - 1302 or plain 429:  user quota/rate-limit → 1 hour
+    """
+    if error_reason and str(error_reason) in _SERVER_OVERLOAD_CODES:
+        return EXHAUSTED_TTL_SERVER_OVERLOAD_SECONDS
     if error_code == 429:
         return EXHAUSTED_TTL_429_SECONDS
     return EXHAUSTED_TTL_DEFAULT_SECONDS
@@ -269,7 +283,7 @@ def _exhausted_until(entry: PooledCredential) -> Optional[float]:
     if reset_at is not None:
         return reset_at
     if entry.last_status_at:
-        return entry.last_status_at + _exhausted_ttl(entry.last_error_code)
+        return entry.last_status_at + _exhausted_ttl(entry.last_error_code, entry.last_error_reason)
     return None
 
 
