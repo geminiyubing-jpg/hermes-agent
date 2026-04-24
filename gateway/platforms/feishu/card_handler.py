@@ -18,7 +18,6 @@ from typing import Any, Dict, Optional
 from .constants import (
     _APPROVAL_CHOICE_MAP,
     _APPROVAL_LABEL_MAP,
-    _FEISHU_ACK_EMOJI,
     _FEISHU_CARD_ACTION_DEDUP_TTL_SECONDS,
 )
 

@@ -21,6 +21,7 @@ import re
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,7 +66,9 @@ try:
         UpdateMessageRequest,
         UpdateMessageRequestBody,
     )
+    from lark_oapi.core import AccessTokenType, HttpMethod
     from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+    from lark_oapi.core.model import BaseRequest
     from lark_oapi.event.callback.model.p2_card_action_trigger import (
         CallBackCard,
         P2CardActionTriggerResponse,
@@ -83,6 +86,9 @@ except ImportError:
     FeishuWSClient = None  # type: ignore[assignment]
     FEISHU_DOMAIN = None  # type: ignore[assignment]
     LARK_DOMAIN = None  # type: ignore[assignment]
+    AccessTokenType = None  # type: ignore[assignment]
+    HttpMethod = None  # type: ignore[assignment]
+    BaseRequest = None  # type: ignore[assignment]
 
 FEISHU_WEBSOCKET_AVAILABLE = websockets is not None
 FEISHU_WEBHOOK_AVAILABLE = aiohttp is not None
@@ -96,6 +102,7 @@ from gateway.platforms.base import (
     BasePlatformAdapter,
     MessageEvent,
     MessageType,
+    ProcessingOutcome,
     SendResult,
     SUPPORTED_DOCUMENT_TYPES,
     cache_document_from_bytes,
@@ -116,7 +123,9 @@ from .request_builders import FeishuRequestBuilderMixin
 from .constants import (
     _MARKDOWN_HINT_RE,
     _FEISHU_APP_LOCK_SCOPE,
-    _FEISHU_ACK_EMOJI,
+    _FEISHU_REACTION_IN_PROGRESS,
+    _FEISHU_REACTION_FAILURE,
+    _FEISHU_PROCESSING_REACTION_CACHE_SIZE,
     _FEISHU_CONNECT_ATTEMPTS,
     _FEISHU_DEDUP_TTL_SECONDS,
     _FEISHU_SEND_ATTEMPTS,
@@ -145,14 +154,17 @@ from .onboarding import (
     _probe_bot_sdk,
     qr_register,
     _qrcode_mod,
+    _parse_bot_response,
 )
-from .types import FeishuAdapterSettings, FeishuGroupRule, FeishuBatchState
+from .types import FeishuAdapterSettings, FeishuGroupRule, FeishuBatchState, FeishuMentionRef, _FeishuBotIdentity
 from .message_parser import (
     _build_markdown_post_payload,
     _strip_markdown_to_plain_text,
     _coerce_int,
     _coerce_required_int,
     normalize_feishu_message,
+    _build_mention_hint,
+    _strip_edge_self_mentions,
 )
 from .constants import _POST_CONTENT_INVALID_RE, _MARKDOWN_HINT_RE
 from .websocket import _run_official_feishu_ws_client  # re-exported for test backward-compat
@@ -244,6 +256,9 @@ class FeishuAdapter(
         # Exec approval button state (approval_id -> {session_key, message_id, chat_id})
         self._approval_state: Dict[int, Dict[str, str]] = {}
         self._approval_counter = itertools.count(1)
+        # Feishu reaction deletion requires the opaque reaction_id returned
+        # by create, so we cache it per message_id.
+        self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
         self._load_seen_message_ids()
 
     @staticmethod
@@ -544,6 +559,7 @@ class FeishuAdapter(
         if not self._client:
             return SendResult(success=False, error="Not connected")
 
+        content = self.format_message(content)
         try:
             msg_type, payload = self._build_outbound_payload(content)
             body = self._build_update_message_body(msg_type=msg_type, content=payload)
@@ -845,12 +861,12 @@ class FeishuAdapter(
             operator_type,
             emoji_type,
         )
-        # Only process reactions from real users. Ignore app/bot-generated reactions
-        # and Hermes' own ACK emoji to avoid feedback loops.
+        # Drop bot/app-origin reactions to break the feedback loop from our
+        # own lifecycle reactions. A human reacting with the same emoji is
+        # still routed through.
         loop = self._loop
         if (
             operator_type in {"bot", "app"}
-            or emoji_type == _FEISHU_ACK_EMOJI
             or not message_id
             or loop is None
             or bool(getattr(loop, "is_closed", lambda: False)())
@@ -876,28 +892,32 @@ class FeishuAdapter(
 
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:
         """Dispatch a single event through the agent pipeline with per-chat serialization
-        and a persistent ACK emoji reaction before processing starts.
+        before handing the event off to the agent.
         """
         chat_id = getattr(event.source, "chat_id", "") or "" if event.source else ""
         chat_lock = self._get_chat_lock(chat_id)
         async with chat_lock:
-            message_id = event.message_id
-            if message_id:
-                await self._add_ack_reaction(message_id)
             await self.handle_message(event)
 
-    async def _add_ack_reaction(self, message_id: str) -> Optional[str]:
-        """Add a persistent ACK emoji reaction to signal the message was received."""
-        if not self._client or not message_id:
+    # =========================================================================
+    # Processing status reactions
+    # =========================================================================
+
+    def _reactions_enabled(self) -> bool:
+        return os.getenv("FEISHU_REACTIONS", "true").strip().lower() not in ("false", "0", "no")
+
+    async def _add_reaction(self, message_id: str, emoji_type: str) -> Optional[str]:
+        """Return the reaction_id on success, else None."""
+        if not self._client or not message_id or not emoji_type:
             return None
         try:
-            from lark_oapi.api.im.v1 import (  # lazy import — keeps optional dep optional
+            from lark_oapi.api.im.v1 import (
                 CreateMessageReactionRequest,
                 CreateMessageReactionRequestBody,
             )
             body = (
                 CreateMessageReactionRequestBody.builder()
-                .reaction_type({"emoji_type": _FEISHU_ACK_EMOJI})
+                .reaction_type({"emoji_type": emoji_type})
                 .build()
             )
             request = (
@@ -910,15 +930,89 @@ class FeishuAdapter(
             if response and getattr(response, "success", lambda: False)():
                 data = getattr(response, "data", None)
                 return getattr(data, "reaction_id", None)
-            logger.warning(
-                "[Feishu] Failed to add ack reaction to %s: code=%s msg=%s",
+            logger.debug(
+                "[Feishu] Add reaction %s on %s rejected: code=%s msg=%s",
+                emoji_type,
                 message_id,
                 getattr(response, "code", None),
                 getattr(response, "msg", None),
             )
         except Exception:
-            logger.warning("[Feishu] Failed to add ack reaction to %s", message_id, exc_info=True)
+            logger.warning(
+                "[Feishu] Add reaction %s on %s raised",
+                emoji_type,
+                message_id,
+                exc_info=True,
+            )
         return None
+
+    async def _remove_reaction(self, message_id: str, reaction_id: str) -> bool:
+        if not self._client or not message_id or not reaction_id:
+            return False
+        try:
+            from lark_oapi.api.im.v1 import DeleteMessageReactionRequest
+            request = (
+                DeleteMessageReactionRequest.builder()
+                .message_id(message_id)
+                .reaction_id(reaction_id)
+                .build()
+            )
+            response = await asyncio.to_thread(self._client.im.v1.message_reaction.delete, request)
+            if response and getattr(response, "success", lambda: False)():
+                return True
+            logger.debug(
+                "[Feishu] Remove reaction %s on %s rejected: code=%s msg=%s",
+                reaction_id,
+                message_id,
+                getattr(response, "code", None),
+                getattr(response, "msg", None),
+            )
+        except Exception:
+            logger.warning(
+                "[Feishu] Remove reaction %s on %s raised",
+                reaction_id,
+                message_id,
+                exc_info=True,
+            )
+        return False
+
+    def _remember_processing_reaction(self, message_id: str, reaction_id: str) -> None:
+        cache = self._pending_processing_reactions
+        cache[message_id] = reaction_id
+        cache.move_to_end(message_id)
+        while len(cache) > _FEISHU_PROCESSING_REACTION_CACHE_SIZE:
+            cache.popitem(last=False)
+
+    def _pop_processing_reaction(self, message_id: str) -> Optional[str]:
+        return self._pending_processing_reactions.pop(message_id, None)
+
+    async def on_processing_start(self, event: MessageEvent) -> None:
+        if not self._reactions_enabled():
+            return
+        message_id = event.message_id
+        if not message_id or message_id in self._pending_processing_reactions:
+            return
+        reaction_id = await self._add_reaction(message_id, _FEISHU_REACTION_IN_PROGRESS)
+        if reaction_id:
+            self._remember_processing_reaction(message_id, reaction_id)
+
+    async def on_processing_complete(
+        self, event: MessageEvent, outcome: ProcessingOutcome
+    ) -> None:
+        if not self._reactions_enabled():
+            return
+        message_id = event.message_id
+        if not message_id:
+            return
+
+        start_reaction_id = self._pending_processing_reactions.get(message_id)
+        if start_reaction_id:
+            if not await self._remove_reaction(message_id, start_reaction_id):
+                return
+            self._pop_processing_reaction(message_id)
+
+        if outcome is ProcessingOutcome.FAILURE:
+            await self._add_reaction(message_id, _FEISHU_REACTION_FAILURE)
 
     # =========================================================================
     # Inbound processing pipeline
@@ -933,13 +1027,22 @@ class FeishuAdapter(
         chat_type: str,
         message_id: str,
     ) -> None:
-        text, inbound_type, media_urls, media_types = await self._extract_message_content(message)
+        text, inbound_type, media_urls, media_types, mentions = await self._extract_message_content(message)
+
+        if inbound_type == MessageType.TEXT:
+            text = _strip_edge_self_mentions(text, mentions)
+            if text.startswith("/"):
+                inbound_type = MessageType.COMMAND
+
+        # Guard runs post-strip so a pure "@Bot" message (stripped to "") is dropped.
         if inbound_type == MessageType.TEXT and not text and not media_urls:
-            logger.debug("[Feishu] Ignoring unsupported or empty message type: %s", getattr(message, "message_type", ""))
+            logger.debug("[Feishu] Ignoring empty text message id=%s", message_id)
             return
 
-        if inbound_type == MessageType.TEXT and text.startswith("/"):
-            inbound_type = MessageType.COMMAND
+        if inbound_type != MessageType.COMMAND:
+            hint = _build_mention_hint(mentions)
+            if hint:
+                text = f"{hint}\n\n{text}" if text else hint
 
         reply_to_message_id = (
             getattr(message, "parent_id", None)
@@ -1084,7 +1187,8 @@ class FeishuAdapter(
         open_id = getattr(sender_id, "open_id", None) or None
         user_id = getattr(sender_id, "user_id", None) or None
         union_id = getattr(sender_id, "union_id", None) or None
-        primary_id = open_id or user_id
+        # Prefer tenant-scoped user_id; fall back to app-scoped open_id.
+        primary_id = user_id or open_id
         display_name = await self._resolve_sender_name_from_api(primary_id or union_id)
         return {
             "user_id": primary_id,
@@ -1171,7 +1275,12 @@ class FeishuAdapter(
             body = getattr(parent, "body", None)
             msg_type = getattr(parent, "msg_type", "") or ""
             raw_content = getattr(body, "content", "") or ""
-            text = self._extract_text_from_raw_content(msg_type=msg_type, raw_content=raw_content)
+            parent_mentions = getattr(parent, "mentions", None) if parent else None
+            text = self._extract_text_from_raw_content(
+                msg_type=msg_type,
+                raw_content=raw_content,
+                mentions=parent_mentions,
+            )
             cache = self._message_text_cache
             if len(cache) >= _FEISHU_MESSAGE_TEXT_CACHE_MAX:
                 oldest = next(iter(cache))
@@ -1182,8 +1291,19 @@ class FeishuAdapter(
             logger.warning("[Feishu] Failed to fetch parent message %s", message_id, exc_info=True)
             return None
 
-    def _extract_text_from_raw_content(self, *, msg_type: str, raw_content: str) -> Optional[str]:
-        normalized = normalize_feishu_message(message_type=msg_type, raw_content=raw_content)
+    def _extract_text_from_raw_content(
+        self,
+        *,
+        msg_type: str,
+        raw_content: str,
+        mentions: Optional[Any] = None,
+    ) -> Optional[str]:
+        normalized = normalize_feishu_message(
+            message_type=msg_type,
+            raw_content=raw_content,
+            mentions=mentions,
+            bot=self._bot_identity(),
+        )
         if normalized.text_content:
             return normalized.text_content
         placeholder = normalized.metadata.get("placeholder_text") if isinstance(normalized.metadata, dict) else None
@@ -1246,46 +1366,99 @@ class FeishuAdapter(
         normalized = normalize_feishu_message(
             message_type=getattr(message, "message_type", "") or "",
             raw_content=raw_content,
+            mentions=getattr(message, "mentions", None),
+            bot=self._bot_identity(),
         )
-        if normalized.mentioned_ids:
-            return self._post_mentions_bot(normalized.mentioned_ids)
-        return False
+        return self._post_mentions_bot(normalized.mentions)
 
     def _message_mentions_bot(self, mentions: List[Any]) -> bool:
-        """Check whether any mention targets the configured or inferred bot identity."""
+        # IDs trump names: when both sides have open_id (or both user_id),
+        # match requires equal IDs. Name fallback only when either side
+        # lacks an ID.
         for mention in mentions:
             mention_id = getattr(mention, "id", None)
-            mention_open_id = getattr(mention_id, "open_id", None)
-            mention_user_id = getattr(mention_id, "user_id", None)
+            mention_open_id = (getattr(mention_id, "open_id", None) or "").strip()
+            mention_user_id = (getattr(mention_id, "user_id", None) or "").strip()
             mention_name = (getattr(mention, "name", None) or "").strip()
 
-            if self._bot_open_id and mention_open_id == self._bot_open_id:
-                return True
-            if self._bot_user_id and mention_user_id == self._bot_user_id:
-                return True
+            if mention_open_id and self._bot_open_id:
+                if mention_open_id == self._bot_open_id:
+                    return True
+                continue  # IDs differ -- not the bot; skip name fallback.
+            if mention_user_id and self._bot_user_id:
+                if mention_user_id == self._bot_user_id:
+                    return True
+                continue
             if self._bot_name and mention_name == self._bot_name:
                 return True
 
         return False
 
-    def _post_mentions_bot(self, mentioned_ids: List[str]) -> bool:
-        if not mentioned_ids:
-            return False
-        if self._bot_open_id and self._bot_open_id in mentioned_ids:
-            return True
-        if self._bot_user_id and self._bot_user_id in mentioned_ids:
-            return True
-        return False
+    def _post_mentions_bot(self, mentions: List[FeishuMentionRef]) -> bool:
+        return any(m.is_self for m in mentions)
+
+    def _bot_identity(self) -> _FeishuBotIdentity:
+        return _FeishuBotIdentity(
+            open_id=self._bot_open_id,
+            user_id=self._bot_user_id,
+            name=self._bot_name,
+        )
 
     # =========================================================================
     # Deduplication — seen message ID cache (persistent)
     # =========================================================================
 
     async def _hydrate_bot_identity(self) -> None:
-        """Best-effort discovery of bot identity for precise group mention gating."""
+        """Best-effort discovery of bot identity for precise group mention gating
+        and self-sent bot event filtering.
+
+        Populates ``_bot_open_id`` and ``_bot_name`` from /open-apis/bot/v3/info
+        (no extra scopes required beyond the tenant access token). Falls back to
+        the application info endpoint for ``_bot_name`` only when the first probe
+        doesn't return it. Each field is hydrated independently -- a value already
+        supplied via env vars (FEISHU_BOT_OPEN_ID / FEISHU_BOT_USER_ID /
+        FEISHU_BOT_NAME) is preserved and skips its probe.
+        """
         if not self._client:
             return
-        if any((self._bot_open_id, self._bot_user_id, self._bot_name)):
+        if self._bot_open_id and self._bot_name:
+            # Everything the self-send filter and precise mention gate need is
+            # already in place; nothing to probe.
+            return
+
+        # Primary probe: /open-apis/bot/v3/info -- returns bot_name + open_id, no
+        # extra scopes required. This is the same endpoint the onboarding wizard
+        # uses via probe_bot().
+        if not self._bot_open_id or not self._bot_name:
+            try:
+                req = (
+                    BaseRequest.builder()
+                    .http_method(HttpMethod.GET)
+                    .uri("/open-apis/bot/v3/info")
+                    .token_types({AccessTokenType.TENANT})
+                    .build()
+                )
+                resp = await asyncio.to_thread(self._client.request, req)
+                content = getattr(getattr(resp, "raw", None), "content", None)
+                if content:
+                    payload = json.loads(content)
+                    parsed = _parse_bot_response(payload) or {}
+                    open_id = (parsed.get("bot_open_id") or "").strip()
+                    bot_name = (parsed.get("bot_name") or "").strip()
+                    if open_id and not self._bot_open_id:
+                        self._bot_open_id = open_id
+                    if bot_name and not self._bot_name:
+                        self._bot_name = bot_name
+            except Exception:
+                logger.debug(
+                    "[Feishu] /bot/v3/info probe failed during hydration",
+                    exc_info=True,
+                )
+
+        # Fallback probe for _bot_name only: application info endpoint. Needs
+        # admin:app.info:readonly or application:application:self_manage scope,
+        # so it's best-effort.
+        if self._bot_name:
             return
         try:
             request = self._build_get_application_request(app_id=self._app_id, lang="en_us")
@@ -1294,17 +1467,17 @@ class FeishuAdapter(
                 code = getattr(response, "code", None)
                 if code == 99991672:
                     logger.warning(
-                        "[Feishu] Unable to hydrate bot identity from application info. "
+                        "[Feishu] Unable to hydrate bot name from application info. "
                         "Grant admin:app.info:readonly or application:application:self_manage "
                         "so group @mention gating can resolve the bot name precisely."
                     )
                 return
             app = getattr(getattr(response, "data", None), "app", None)
             app_name = (getattr(app, "app_name", None) or "").strip()
-            if app_name:
+            if app_name and not self._bot_name:
                 self._bot_name = app_name
         except Exception:
-            logger.debug("[Feishu] Failed to hydrate bot identity", exc_info=True)
+            logger.debug("[Feishu] Failed to hydrate bot name from application info", exc_info=True)
 
     def _load_seen_message_ids(self) -> None:
         try:

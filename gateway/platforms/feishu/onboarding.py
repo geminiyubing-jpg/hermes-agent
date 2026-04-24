@@ -31,11 +31,16 @@ except (ImportError, TypeError):
 
 try:
     import lark_oapi as lark
+    from lark_oapi.core import AccessTokenType, HttpMethod
     from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
+    from lark_oapi.core.model import BaseRequest
 except ImportError:
     lark = None  # type: ignore[assignment]
     FEISHU_DOMAIN = None  # type: ignore[assignment]
     LARK_DOMAIN = None  # type: ignore[assignment]
+    AccessTokenType = None  # type: ignore[assignment]
+    HttpMethod = None  # type: ignore[assignment]
+    BaseRequest = None  # type: ignore[assignment]
 
 
 def _accounts_base_url(domain: str) -> str:
@@ -214,12 +219,12 @@ def _build_onboard_client(app_id: str, app_secret: str, domain: str) -> Any:
 
 
 def _parse_bot_response(data: dict) -> Optional[dict]:
-    """Extract bot_name and bot_open_id from a /bot/v3/info response."""
+    # /bot/v3/info returns bot.app_name; legacy paths used bot_name -- accept both.
     if data.get("code") != 0:
         return None
     bot = data.get("bot") or data.get("data", {}).get("bot") or {}
     return {
-        "bot_name": bot.get("bot_name"),
+        "bot_name": bot.get("app_name") or bot.get("bot_name"),
         "bot_open_id": bot.get("open_id"),
     }
 
@@ -228,13 +233,18 @@ def _probe_bot_sdk(app_id: str, app_secret: str, domain: str) -> Optional[dict]:
     """Probe bot info using lark_oapi SDK."""
     try:
         client = _build_onboard_client(app_id, app_secret, domain)
-        resp = client.request(
-            method="GET",
-            url="/open-apis/bot/v3/info",
-            body=None,
-            raw_response=True,
+        req = (
+            BaseRequest.builder()
+            .http_method(HttpMethod.GET)
+            .uri("/open-apis/bot/v3/info")
+            .token_types({AccessTokenType.TENANT})
+            .build()
         )
-        return _parse_bot_response(json.loads(resp.content))
+        resp = client.request(req)
+        content = getattr(getattr(resp, "raw", None), "content", None)
+        if content is None:
+            return None
+        return _parse_bot_response(json.loads(content))
     except Exception as exc:
         logger.debug("[Feishu onboard] SDK probe failed: %s", exc)
         return None

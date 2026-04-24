@@ -47,7 +47,7 @@ from .constants import (
     _VIDEO_EXTENSIONS,
 )
 from .message_parser import normalize_feishu_message
-from .types import FeishuNormalizedMessage
+from .types import FeishuNormalizedMessage, FeishuMentionRef
 
 logger = logging.getLogger(__name__)
 
@@ -305,14 +305,21 @@ class FeishuMediaMixin:
     # Inbound message content extraction
     # =====================================================================
 
-    async def _extract_message_content(self, message: Any) -> tuple[str, MessageType, List[str], List[str]]:
+    async def _extract_message_content(
+        self, message: Any
+    ) -> tuple[str, MessageType, List[str], List[str], List[FeishuMentionRef]]:
         """Extract text and cached media from a normalized Feishu message."""
         raw_content = getattr(message, "content", "") or ""
         raw_type = getattr(message, "message_type", "") or ""
         message_id = str(getattr(message, "message_id", "") or "")
         logger.info("[Feishu] Received raw message type=%s message_id=%s", raw_type, message_id)
 
-        normalized = normalize_feishu_message(message_type=raw_type, raw_content=raw_content)
+        normalized = normalize_feishu_message(
+            message_type=raw_type,
+            raw_content=raw_content,
+            mentions=getattr(message, "mentions", None),
+            bot=self._bot_identity(),
+        )
         media_urls, media_types = await self._download_feishu_message_resources(
             message_id=message_id,
             normalized=normalized,
@@ -329,7 +336,7 @@ class FeishuMediaMixin:
             if injected:
                 text = injected
 
-        return text, inbound_type, media_urls, media_types
+        return text, inbound_type, media_urls, media_types, list(normalized.mentions)
 
     async def _download_feishu_message_resources(
         self,

@@ -40,11 +40,35 @@ class FeishuPostMediaRef:
 
 
 @dataclass(frozen=True)
+class FeishuMentionRef:
+    name: str = ""
+    open_id: str = ""
+    is_all: bool = False
+    is_self: bool = False
+
+
+@dataclass(frozen=True)
+class _FeishuBotIdentity:
+    open_id: str = ""
+    user_id: str = ""
+    name: str = ""
+
+    def matches(self, *, open_id: str, user_id: str, name: str) -> bool:
+        # Precedence: open_id > user_id > name. IDs are authoritative when both
+        # sides have them; the next tier is only considered when either side
+        # lacks the current one.
+        if open_id and self.open_id:
+            return open_id == self.open_id
+        if user_id and self.user_id:
+            return user_id == self.user_id
+        return bool(self.name) and name == self.name
+
+
+@dataclass(frozen=True)
 class FeishuPostParseResult:
     text_content: str
     image_keys: List[str] = field(default_factory=list)
     media_refs: List[FeishuPostMediaRef] = field(default_factory=list)
-    mentioned_ids: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -54,7 +78,7 @@ class FeishuNormalizedMessage:
     preferred_message_type: str = "text"
     image_keys: List[str] = field(default_factory=list)
     media_refs: List[FeishuPostMediaRef] = field(default_factory=list)
-    mentioned_ids: List[str] = field(default_factory=list)
+    mentions: List[FeishuMentionRef] = field(default_factory=list)
     relation_kind: str = "plain"
     metadata: Dict[str, Any] = field(default_factory=dict)
 

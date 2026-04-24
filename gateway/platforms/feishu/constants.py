@@ -26,6 +26,8 @@ _MULTISPACE_RE = re.compile(r"[ \t]{2,}")
 _POST_CONTENT_INVALID_RE = re.compile(r"content format of the post type is incorrect", re.IGNORECASE)
 _MARKDOWN_SPECIAL_CHARS_RE = re.compile(r"([\\`*_{}\[\]()#+\-!|>~])")
 _MENTION_PLACEHOLDER_RE = re.compile(r"@_user_\d+")
+_MENTION_BOUNDARY_CHARS = frozenset(" \t\n\r.,;:!?、，。；：！？()[]{}<>\"'`")
+_TRAILING_TERMINAL_PUNCT = frozenset(" \t\n\r.!?。！？")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 # ---------------------------------------------------------------------------
@@ -96,7 +98,14 @@ _APPROVAL_LABEL_MAP: Dict[str, str] = {
 }
 _FEISHU_BOT_MSG_TRACK_SIZE = 512                   # LRU size for tracking sent message IDs
 _FEISHU_REPLY_FALLBACK_CODES = frozenset({230011, 231003})  # reply target withdrawn/missing → create fallback
-_FEISHU_ACK_EMOJI = "OK"
+# Feishu reactions render as prominent badges, unlike Discord/Telegram's
+# small footer emoji — a success badge on every message would add noise, so
+# we only mark start (Typing) and failure (CrossMark); the reply itself is
+# the success signal.
+_FEISHU_REACTION_IN_PROGRESS = "Typing"
+_FEISHU_REACTION_FAILURE = "CrossMark"
+# Bound on the (message_id → reaction_id) handle cache.
+_FEISHU_PROCESSING_REACTION_CACHE_SIZE = 1024
 
 # Cache size limits (prevent unbounded memory growth on long-running instances)
 _FEISHU_SENDER_NAME_CACHE_MAX = 1024

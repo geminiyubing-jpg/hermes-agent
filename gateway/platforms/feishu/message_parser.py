@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
-from .types import FeishuPostMediaRef, FeishuPostParseResult, FeishuNormalizedMessage
+from .types import FeishuPostMediaRef, FeishuPostParseResult, FeishuNormalizedMessage, FeishuMentionRef, _FeishuBotIdentity
 from .constants import (
     FALLBACK_POST_TEXT,
     FALLBACK_FORWARD_TEXT,
@@ -17,6 +17,8 @@ from .constants import (
     _MARKDOWN_SPECIAL_CHARS_RE,
     _MARKDOWN_LINK_RE,
     _MENTION_PLACEHOLDER_RE,
+    _MENTION_BOUNDARY_CHARS,
+    _TRAILING_TERMINAL_PUNCT,
     _WHITESPACE_RE,
     _MULTISPACE_RE,
     _PREFERRED_LOCALES,
@@ -143,14 +145,17 @@ def _build_markdown_post_payload(content: str) -> str:
     )
 
 
-def parse_feishu_post_payload(payload: Any) -> FeishuPostParseResult:
+def parse_feishu_post_payload(
+    payload: Any,
+    *,
+    mentions_map: Optional[Dict[str, FeishuMentionRef]] = None,
+) -> FeishuPostParseResult:
     resolved = _resolve_post_payload(payload)
     if not resolved:
         return FeishuPostParseResult(text_content=FALLBACK_POST_TEXT)
 
     image_keys: List[str] = []
     media_refs: List[FeishuPostMediaRef] = []
-    mentioned_ids: List[str] = []
     parts: List[str] = []
 
     title = _normalize_feishu_text(str(resolved.get("title", "")).strip())
@@ -161,7 +166,10 @@ def parse_feishu_post_payload(payload: Any) -> FeishuPostParseResult:
         if not isinstance(row, list):
             continue
         row_text = _normalize_feishu_text(
-            "".join(_render_post_element(item, image_keys, media_refs, mentioned_ids) for item in row)
+            "".join(
+                _render_post_element(item, image_keys, media_refs, mentions_map)
+                for item in row
+            )
         )
         if row_text:
             parts.append(row_text)
@@ -170,7 +178,6 @@ def parse_feishu_post_payload(payload: Any) -> FeishuPostParseResult:
         text_content="\n".join(parts).strip() or FALLBACK_POST_TEXT,
         image_keys=image_keys,
         media_refs=media_refs,
-        mentioned_ids=mentioned_ids,
     )
 
 
@@ -222,7 +229,7 @@ def _render_post_element(
     element: Any,
     image_keys: List[str],
     media_refs: List[FeishuPostMediaRef],
-    mentioned_ids: List[str],
+    mentions_map: Optional[Dict[str, FeishuMentionRef]] = None,
 ) -> str:
     if isinstance(element, str):
         return element
@@ -240,19 +247,21 @@ def _render_post_element(
         escaped_label = _escape_markdown_text(label)
         return f"[{escaped_label}]({href})" if href else escaped_label
     if tag == "at":
-        mentioned_id = (
-            str(element.get("open_id", "")).strip()
-            or str(element.get("user_id", "")).strip()
-        )
-        if mentioned_id and mentioned_id not in mentioned_ids:
-            mentioned_ids.append(mentioned_id)
-        display_name = (
-            str(element.get("user_name", "")).strip()
-            or str(element.get("name", "")).strip()
-            or str(element.get("text", "")).strip()
-            or mentioned_id
-        )
-        return f"@{_escape_markdown_text(display_name)}" if display_name else "@"
+        # Post <at> user_id is a placeholder ("@_user_N" or "@_all"); look up
+        # the real ref in mentions_map for the display name.
+        placeholder = str(element.get("user_id", "")).strip()
+        if placeholder == "@_all":
+            # Feishu SDK sometimes omits @_all from the top-level mentions
+            # payload; record it here so the caller's mention list stays complete.
+            if mentions_map is not None and "@_all" not in mentions_map:
+                mentions_map["@_all"] = FeishuMentionRef(is_all=True)
+            return "@all"
+        ref = (mentions_map or {}).get(placeholder)
+        if ref is not None:
+            display_name = ref.name or ref.open_id or "user"
+        else:
+            display_name = str(element.get("user_name", "")).strip() or "user"
+        return f"@{_escape_markdown_text(display_name)}"
     if tag in {"img", "image"}:
         image_key = str(element.get("image_key", "")).strip()
         if image_key and image_key not in image_keys:
@@ -290,8 +299,7 @@ def _render_post_element(
 
     nested_parts: List[str] = []
     for key in ("text", "title", "content", "children", "elements"):
-        value = element.get(key)
-        extracted = _render_nested_post(value, image_keys, media_refs, mentioned_ids)
+        extracted = _render_nested_post(element.get(key), image_keys, media_refs, mentions_map)
         if extracted:
             nested_parts.append(extracted)
     return " ".join(part for part in nested_parts if part)
@@ -301,7 +309,7 @@ def _render_nested_post(
     value: Any,
     image_keys: List[str],
     media_refs: List[FeishuPostMediaRef],
-    mentioned_ids: List[str],
+    mentions_map: Optional[Dict[str, FeishuMentionRef]] = None,
 ) -> str:
     if isinstance(value, str):
         return _escape_markdown_text(value)
@@ -309,17 +317,17 @@ def _render_nested_post(
         return " ".join(
             part
             for item in value
-            for part in [_render_nested_post(item, image_keys, media_refs, mentioned_ids)]
+            for part in [_render_nested_post(item, image_keys, media_refs, mentions_map)]
             if part
         )
     if isinstance(value, dict):
-        direct = _render_post_element(value, image_keys, media_refs, mentioned_ids)
+        direct = _render_post_element(value, image_keys, media_refs, mentions_map)
         if direct:
             return direct
         return " ".join(
             part
             for item in value.values()
-            for part in [_render_nested_post(item, image_keys, media_refs, mentioned_ids)]
+            for part in [_render_nested_post(item, image_keys, media_refs, mentions_map)]
             if part
         )
     return ""
@@ -330,31 +338,48 @@ def _render_nested_post(
 # ---------------------------------------------------------------------------
 
 
-def normalize_feishu_message(*, message_type: str, raw_content: str) -> FeishuNormalizedMessage:
+def normalize_feishu_message(
+    *,
+    message_type: str,
+    raw_content: str,
+    mentions: Optional[Sequence[Any]] = None,
+    bot: _FeishuBotIdentity = _FeishuBotIdentity(),
+) -> FeishuNormalizedMessage:
     normalized_type = str(message_type or "").strip().lower()
     payload = _load_feishu_payload(raw_content)
+    mentions_map = _build_mentions_map(mentions, bot)
 
     if normalized_type == "text":
+        text = str(payload.get("text", "") or "")
+        # Feishu SDK sometimes omits @_all from the mentions payload even when
+        # the text literal contains it (confirmed via im.v1.message.get).
+        if "@_all" in text and "@_all" not in mentions_map:
+            mentions_map["@_all"] = FeishuMentionRef(is_all=True)
         return FeishuNormalizedMessage(
             raw_type=normalized_type,
-            text_content=_normalize_feishu_text(str(payload.get("text", "") or "")),
+            text_content=_normalize_feishu_text(text, mentions_map),
+            mentions=list(mentions_map.values()),
         )
     if normalized_type == "post":
-        parsed_post = parse_feishu_post_payload(payload)
+        # The walker writes back to mentions_map if it encounters
+        # <at user_id="@_all">, so reading .values() after parsing is enough.
+        parsed_post = parse_feishu_post_payload(payload, mentions_map=mentions_map)
         return FeishuNormalizedMessage(
             raw_type=normalized_type,
             text_content=parsed_post.text_content,
             image_keys=list(parsed_post.image_keys),
             media_refs=list(parsed_post.media_refs),
-            mentioned_ids=list(parsed_post.mentioned_ids),
+            mentions=list(mentions_map.values()),
             relation_kind="post",
         )
+    mention_refs = list(mentions_map.values())
     if normalized_type == "image":
         image_key = str(payload.get("image_key", "") or "").strip()
         alt_text = _normalize_feishu_text(
             str(payload.get("text", "") or "")
             or str(payload.get("alt", "") or "")
-            or FALLBACK_IMAGE_TEXT
+            or FALLBACK_IMAGE_TEXT,
+            mentions_map,
         )
         return FeishuNormalizedMessage(
             raw_type=normalized_type,
@@ -362,6 +387,7 @@ def normalize_feishu_message(*, message_type: str, raw_content: str) -> FeishuNo
             preferred_message_type="photo",
             image_keys=[image_key] if image_key else [],
             relation_kind="image",
+            mentions=mention_refs,
         )
     if normalized_type in {"file", "audio", "media"}:
         media_ref = _build_media_ref_from_payload(payload, resource_type=normalized_type)
@@ -373,6 +399,7 @@ def normalize_feishu_message(*, message_type: str, raw_content: str) -> FeishuNo
             media_refs=[media_ref] if media_ref.file_key else [],
             relation_kind=normalized_type,
             metadata={"placeholder_text": placeholder},
+            mentions=mention_refs,
         )
     if normalized_type == "merge_forward":
         return _normalize_merge_forward_message(payload)
@@ -647,8 +674,20 @@ def _first_non_empty_text(*values: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_feishu_text(text: str) -> str:
-    cleaned = _MENTION_PLACEHOLDER_RE.sub(" ", text or "")
+def _normalize_feishu_text(
+    text: str,
+    mentions_map: Optional[Dict[str, FeishuMentionRef]] = None,
+) -> str:
+    def _sub(match: "re.Match[str]") -> str:
+        key = match.group(0)
+        ref = (mentions_map or {}).get(key)
+        if ref is None:
+            return " "
+        name = ref.name or ref.open_id or "user"
+        return f"@{name}"
+
+    cleaned = _MENTION_PLACEHOLDER_RE.sub(_sub, text or "")
+    cleaned = cleaned.replace("@_all", "@all")
     cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
     cleaned = "\n".join(_WHITESPACE_RE.sub(" ", line).strip() for line in cleaned.split("\n"))
     cleaned = "\n".join(line for line in cleaned.split("\n") if line)
@@ -665,3 +704,114 @@ def _unique_lines(lines: List[str]) -> List[str]:
         seen.add(line)
         unique.append(line)
     return unique
+
+
+# ---------------------------------------------------------------------------
+# Mention helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_mention_ids(mention: Any) -> tuple[str, str]:
+    # Returns (open_id, user_id). im.v1.message.get hands back id as a string
+    # plus id_type discriminator; event payloads hand back a nested UserId
+    # object carrying both fields.
+    mention_id = getattr(mention, "id", None)
+    if isinstance(mention_id, str):
+        id_type = str(getattr(mention, "id_type", "") or "").lower()
+        if id_type == "open_id":
+            return mention_id, ""
+        if id_type == "user_id":
+            return "", mention_id
+        return "", ""
+    if mention_id is None:
+        return "", ""
+    return (
+        str(getattr(mention_id, "open_id", "") or ""),
+        str(getattr(mention_id, "user_id", "") or ""),
+    )
+
+
+def _build_mentions_map(
+    mentions: Optional[Sequence[Any]],
+    bot: _FeishuBotIdentity,
+) -> Dict[str, FeishuMentionRef]:
+    result: Dict[str, FeishuMentionRef] = {}
+    for mention in mentions or []:
+        key = str(getattr(mention, "key", "") or "")
+        if not key:
+            continue
+        if key == "@_all":
+            result[key] = FeishuMentionRef(is_all=True)
+            continue
+        open_id, user_id = _extract_mention_ids(mention)
+        name = str(getattr(mention, "name", "") or "").strip()
+        result[key] = FeishuMentionRef(
+            name=name,
+            open_id=open_id,
+            is_self=bot.matches(open_id=open_id, user_id=user_id, name=name),
+        )
+    return result
+
+
+def _build_mention_hint(mentions: Sequence[FeishuMentionRef]) -> str:
+    parts: List[str] = []
+    seen: set = set()
+    for ref in mentions:
+        if ref.is_self:
+            continue
+        signature = (ref.is_all, ref.open_id, ref.name)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        if ref.is_all:
+            parts.append("@all")
+        elif ref.open_id:
+            parts.append(f"{ref.name or 'unknown'} (open_id={ref.open_id})")
+        else:
+            parts.append(ref.name or "unknown")
+    return f"[Mentioned: {', '.join(parts)}]" if parts else ""
+
+
+def _strip_edge_self_mentions(
+    text: str,
+    mentions: Sequence[FeishuMentionRef],
+) -> str:
+    # Leading: strip consecutive self-mentions unconditionally.
+    # Trailing: strip only when followed by whitespace/terminal punct, so
+    # mid-sentence references ("don't @Bot again") stay intact.
+    # Leading word-boundary prevents @Al from eating @Alice.
+    if not text:
+        return text
+    self_names = [
+        f"@{ref.name or ref.open_id or 'user'}"
+        for ref in mentions
+        if ref.is_self
+    ]
+    if not self_names:
+        return text
+
+    remaining = text.lstrip()
+    while True:
+        for nm in self_names:
+            if not remaining.startswith(nm):
+                continue
+            after = remaining[len(nm):]
+            if after and after[0] not in _MENTION_BOUNDARY_CHARS:
+                continue
+            remaining = after.lstrip()
+            break
+        else:
+            break
+
+    while True:
+        i = len(remaining)
+        while i > 0 and remaining[i - 1] in _TRAILING_TERMINAL_PUNCT:
+            i -= 1
+        body = remaining[:i]
+        tail = remaining[i:]
+        for nm in self_names:
+            if body.endswith(nm):
+                remaining = body[: -len(nm)].rstrip() + tail
+                break
+        else:
+            return remaining

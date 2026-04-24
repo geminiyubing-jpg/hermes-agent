@@ -62,12 +62,18 @@ from gateway.platforms.feishu.types import (  # noqa: F401
     FeishuAdapterSettings,
     FeishuGroupRule,
     FeishuBatchState,
+    FeishuMentionRef,
+    _FeishuBotIdentity,
 )
 
 # ── Message parsing ────────────────────────────────────────────────────
 from gateway.platforms.feishu.message_parser import (  # noqa: F401
     normalize_feishu_message,
     parse_feishu_post_payload,
+    _build_mention_hint,
+    _build_mentions_map,
+    _normalize_feishu_text,
+    _strip_edge_self_mentions,
 )
 
 # ── Constants (test-used) ──────────────────────────────────────────────
@@ -75,6 +81,7 @@ from gateway.platforms.feishu.constants import (  # noqa: F401
     _FEISHU_WEBHOOK_RATE_LIMIT_MAX,
     _FEISHU_WEBHOOK_RATE_WINDOW_SECONDS,
     _FEISHU_WEBHOOK_MAX_BODY_BYTES,
+    _FEISHU_PROCESSING_REACTION_CACHE_SIZE,
 )
 
 # ── WebSocket helper (test-used) ───────────────────────────────────────
