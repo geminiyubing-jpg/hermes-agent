@@ -181,14 +181,14 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         )
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBHOOK_AVAILABLE", True),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)),
-            patch("gateway.platforms.feishu.release_scoped_lock"),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBHOOK_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)),
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock"),
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
-            patch("gateway.platforms.feishu.web", web_module),
+            patch("gateway.platforms.feishu.websocket.web", web_module),
         ):
             _mock_event_dispatcher_builder(mock_handler_class)
             connected = asyncio.run(adapter.connect())
@@ -209,36 +209,34 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         ws_client = SimpleNamespace()
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
-            patch("gateway.platforms.feishu.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.FeishuWSClient", return_value=ws_client),
-            patch("gateway.platforms.feishu._run_official_feishu_ws_client"),
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)) as acquire_lock,
-            patch("gateway.platforms.feishu.release_scoped_lock") as release_lock,
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.FeishuWSClient", return_value=ws_client),
+            patch("gateway.platforms.feishu.websocket._run_official_feishu_ws_client"),
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)) as acquire_lock,
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock") as release_lock,
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
         ):
             _mock_event_dispatcher_builder(mock_handler_class)
 
-            loop = asyncio.new_event_loop()
-            future = loop.create_future()
-            future.set_result(None)
-
             class _Loop:
                 def run_in_executor(self, *_args, **_kwargs):
-                    return future
+                    # Return a future resolved on the *real* running loop
+                    # (the one created by asyncio.run).
+                    rl = asyncio.get_event_loop()
+                    f = rl.create_future()
+                    f.set_result(None)
+                    return f
 
                 def is_closed(self):
                     return False
 
-            try:
-                with patch("gateway.platforms.feishu.asyncio.get_running_loop", return_value=_Loop()):
-                    connected = asyncio.run(adapter.connect())
-                    asyncio.run(adapter.disconnect())
-            finally:
-                loop.close()
+            with patch("gateway.platforms.feishu.adapter.asyncio.get_running_loop", return_value=_Loop()):
+                connected = asyncio.run(adapter.connect())
+                asyncio.run(adapter.disconnect())
 
         self.assertTrue(connected)
         self.assertIsNone(adapter._event_handler)
@@ -260,10 +258,10 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         adapter = FeishuAdapter(PlatformConfig())
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
             patch(
-                "gateway.platforms.feishu.acquire_scoped_lock",
+                "gateway.platforms.feishu.adapter.acquire_scoped_lock",
                 return_value=(False, {"pid": 4321}),
             ),
         ):
@@ -287,22 +285,19 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
         sleeps = []
 
         with (
-            patch("gateway.platforms.feishu.FEISHU_AVAILABLE", True),
-            patch("gateway.platforms.feishu.FEISHU_WEBSOCKET_AVAILABLE", True),
-            patch("gateway.platforms.feishu.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
-            patch("gateway.platforms.feishu.EventDispatcherHandler") as mock_handler_class,
-            patch("gateway.platforms.feishu.FeishuWSClient", return_value=ws_client),
-            patch("gateway.platforms.feishu.acquire_scoped_lock", return_value=(True, None)),
-            patch("gateway.platforms.feishu.release_scoped_lock"),
+            patch("gateway.platforms.feishu.adapter.FEISHU_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.FEISHU_WEBSOCKET_AVAILABLE", True),
+            patch("gateway.platforms.feishu.adapter.lark", SimpleNamespace(LogLevel=SimpleNamespace(INFO="INFO", WARNING="WARNING"))),
+            patch("gateway.platforms.feishu.adapter.EventDispatcherHandler") as mock_handler_class,
+            patch("gateway.platforms.feishu.adapter.FeishuWSClient", return_value=ws_client),
+            patch("gateway.platforms.feishu.websocket._run_official_feishu_ws_client"),
+            patch("gateway.platforms.feishu.adapter.acquire_scoped_lock", return_value=(True, None)),
+            patch("gateway.platforms.feishu.adapter.release_scoped_lock"),
             patch.object(adapter, "_hydrate_bot_identity", new=AsyncMock()),
-            patch("gateway.platforms.feishu.asyncio.sleep", side_effect=lambda delay: sleeps.append(delay)),
+            patch("asyncio.sleep", new=AsyncMock(side_effect=lambda delay: sleeps.append(delay))),
             patch.object(adapter, "_build_lark_client", return_value=SimpleNamespace()),
         ):
             _mock_event_dispatcher_builder(mock_handler_class)
-
-            loop = asyncio.new_event_loop()
-            future = loop.create_future()
-            future.set_result(None)
 
             class _Loop:
                 def __init__(self):
@@ -312,17 +307,20 @@ class TestFeishuAdapterMessaging(unittest.TestCase):
                     self.calls += 1
                     if self.calls == 1:
                         raise OSError("temporary websocket failure")
-                    return future
+                    rl = asyncio.get_event_loop()
+                    f = rl.create_future()
+                    f.set_result(None)
+                    return f
 
                 def is_closed(self):
                     return False
 
             fake_loop = _Loop()
             try:
-                with patch("gateway.platforms.feishu.asyncio.get_running_loop", return_value=fake_loop):
+                with patch("gateway.platforms.feishu.adapter.asyncio.get_running_loop", return_value=fake_loop):
                     connected = asyncio.run(adapter.connect())
             finally:
-                loop.close()
+                pass
 
         self.assertTrue(connected)
         self.assertEqual(sleeps, [1])
@@ -617,7 +615,7 @@ class TestAdapterBehavior(unittest.TestCase):
                 calls.append("builder")
                 return _Builder()
 
-        with patch("gateway.platforms.feishu.EventDispatcherHandler", _Dispatcher):
+        with patch("gateway.platforms.feishu.adapter.EventDispatcherHandler", _Dispatcher):
             handler = adapter._build_event_handler()
 
         self.assertEqual(handler, "handler")
@@ -1696,7 +1694,7 @@ class TestAdapterBehavior(unittest.TestCase):
         adapter.send_image_file = AsyncMock(return_value=SimpleNamespace(success=True, message_id="om_img"))
 
         async def _run():
-            with patch("gateway.platforms.feishu.cache_image_from_url", new=AsyncMock(return_value="/tmp/cached.png")):
+            with patch("gateway.platforms.feishu.media.cache_image_from_url", new=AsyncMock(return_value="/tmp/cached.png")):
                 return await adapter.send_image("oc_chat", "https://example.com/cat.png", caption="cat")
 
         result = asyncio.run(_run())
@@ -1737,6 +1735,7 @@ class TestAdapterBehavior(unittest.TestCase):
             with patch.dict(os.environ, {"HERMES_HOME": temp_home}, clear=False):
                 first = FeishuAdapter(PlatformConfig())
                 self.assertFalse(first._is_duplicate("om_same"))
+                first._persist_seen_message_ids()
                 second = FeishuAdapter(PlatformConfig())
                 self.assertTrue(second._is_duplicate("om_same"))
 

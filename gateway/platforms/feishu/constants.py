@@ -22,6 +22,8 @@ _MARKDOWN_HINT_RE = re.compile(
 )
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _MENTION_RE = re.compile(r"@_user_\d+")
+_MARKDOWN_FENCE_OPEN_RE = re.compile(r"^```([^\n`]*)\s*$")
+_MARKDOWN_FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 _MULTISPACE_RE = re.compile(r"[ \t]{2,}")
 _POST_CONTENT_INVALID_RE = re.compile(r"content format of the post type is incorrect", re.IGNORECASE)
 _MARKDOWN_SPECIAL_CHARS_RE = re.compile(r"([\\`*_{}\[\]()#+\-!|>~])")
@@ -29,6 +31,10 @@ _MENTION_PLACEHOLDER_RE = re.compile(r"@_user_\d+")
 _MENTION_BOUNDARY_CHARS = frozenset(" \t\n\r.,;:!?、，。；：！？()[]{}<>\"'`")
 _TRAILING_TERMINAL_PUNCT = frozenset(" \t\n\r.!?。！？")
 _WHITESPACE_RE = re.compile(r"\s+")
+
+# Regex patterns for splitting fenced code blocks in post payloads
+_MARKDOWN_FENCE_OPEN_RE = re.compile(r"^```([^\n`]*)\s*$")
+_MARKDOWN_FENCE_CLOSE_RE = re.compile(r"^```\s*$")
 
 # ---------------------------------------------------------------------------
 # Media type sets and upload constants
