@@ -1128,3 +1128,97 @@ class TestRateLimitErrorWithoutStatusCode:
         e.status_code = None
         result = classify_api_error(e, provider="copilot", model="gpt-4o")
         assert result.reason != FailoverReason.rate_limit
+
+class TestOverloadedDisambiguation:
+    """ZAI returns HTTP 429 for BOTH user rate-limit AND server overload.
+
+    The classifier must distinguish these by checking the body error code
+    and message text.  Server overload must NOT trigger credential rotation.
+    """
+
+    def test_429_subcode_1305_overloaded(self):
+        """ZAI 429 with error code 1305 (server overload) → overloaded."""
+        e = MockAPIError(
+            "该模型当前访问量过大，请您稍后再试",
+            status_code=429,
+            body={"error": {"code": 1305, "message": "该模型当前访问量过大"}},
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+        assert result.retryable is True
+        assert result.should_rotate_credential is False
+        assert result.status_code == 429
+
+    def test_429_subcode_1306_overloaded(self):
+        e = MockAPIError(
+            "服务器繁忙",
+            status_code=429,
+            body={"error": {"code": "1306", "message": "服务器繁忙"}},
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+        assert result.retryable is True
+
+    def test_429_subcode_1307_overloaded(self):
+        e = MockAPIError(
+            "系统负载过高",
+            status_code=429,
+            body={"error": {"code": "1307"}},
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+
+    def test_429_overload_message_no_code_is_overloaded(self):
+        """429 with overload message but no structured code → overloaded."""
+        e = MockAPIError(
+            "该模型当前访问量过大，请您稍后再试",
+            status_code=429,
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+        assert result.retryable is True
+        assert result.should_rotate_credential is False
+
+    def test_429_rate_limit_subcode_1302_stays_rate_limit(self):
+        """ZAI 429 with code 1302 (user rate limit) → rate_limit, NOT overloaded."""
+        e = MockAPIError(
+            "您的账户已达到速率限制",
+            status_code=429,
+            body={"error": {"code": 1302, "message": "您的账户已达到速率限制"}},
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.rate_limit
+        assert result.should_rotate_credential is True
+
+    def test_429_plain_stays_rate_limit(self):
+        """Plain 429 without overload signals → rate_limit (unchanged)."""
+        e = MockAPIError("Too Many Requests", status_code=429)
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.rate_limit
+        assert result.should_rotate_credential is True
+        assert result.should_fallback is True
+
+    def test_no_status_overload_subcode_in_body(self):
+        """Error without status code but with overload sub-code → overloaded."""
+        e = MockAPIError(
+            "server overloaded",
+            body={"error": {"code": "1305", "message": "访问量过大"}},
+        )
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+
+    def test_no_status_overload_message_only(self):
+        """Error without status code but with overload message → overloaded."""
+        e = MockAPIError("该模型当前访问量过大")
+        result = classify_api_error(e)
+        assert result.reason == FailoverReason.overloaded
+
+    def test_anthropic_long_context_tier_429_unchanged(self):
+        """Anthropic long-context tier 429 must still be classified correctly."""
+        e = MockAPIError(
+            "Extra usage is required for long context requests over 200k tokens",
+            status_code=429,
+        )
+        result = classify_api_error(e, provider="anthropic")
+        assert result.reason == FailoverReason.long_context_tier
+
