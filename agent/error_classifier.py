@@ -307,6 +307,20 @@ _SSL_TRANSIENT_PATTERNS = [
     "[ssl:",
 ]
 
+# Server overload patterns — providers (ZAI, etc.) that return HTTP 429 for
+# server-side overload instead of the standard 503/529.  These patterns
+# disambiguate server overload from user rate-limit in the 429 handler.
+_SERVER_OVERLOAD_SUBCODES = frozenset({"1305", "1306", "1307", "1312"})
+
+_SERVER_OVERLOAD_PATTERNS = [
+    "访问量过大",           # ZAI: "该模型当前访问量过大"
+    "服务器繁忙",           # Chinese providers: server busy
+    "系统负载",             # Chinese: system load overload
+    "capacity",             # English: insufficient capacity
+    "overloaded",           # English: generic overload
+    "too many concurrent",  # English: concurrency limit
+]
+
 
 # ── Classification pipeline ─────────────────────────────────────────────
 
@@ -589,6 +603,12 @@ def _classify_by_status(
         )
 
     if status_code == 429:
+        # Disambiguate: some providers (ZAI) return 429 for server overload.
+        # Check body error code and message before defaulting to rate_limit.
+        if error_code and str(error_code) in _SERVER_OVERLOAD_SUBCODES:
+            return result_fn(FailoverReason.overloaded, retryable=True)
+        if any(p in error_msg for p in _SERVER_OVERLOAD_PATTERNS):
+            return result_fn(FailoverReason.overloaded, retryable=True)
         # Already checked long_context_tier above; this is a normal rate limit
         return result_fn(
             FailoverReason.rate_limit,
@@ -775,6 +795,9 @@ def _classify_by_error_code(
             should_compress=True,
         )
 
+    if code_lower in _SERVER_OVERLOAD_SUBCODES:
+        return result_fn(FailoverReason.overloaded, retryable=True)
+
     return None
 
 
@@ -797,6 +820,11 @@ def _classify_by_message(
             retryable=True,
             should_compress=True,
         )
+
+    # Server overload — check before rate-limit patterns because overload
+    # messages might overlap with rate-limit keywords.
+    if any(p in error_msg for p in _SERVER_OVERLOAD_PATTERNS):
+        return result_fn(FailoverReason.overloaded, retryable=True)
 
     # Usage-limit patterns need the same disambiguation as 402: some providers
     # surface "usage limit" errors without an HTTP status code.  A transient
