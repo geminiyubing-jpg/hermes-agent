@@ -1,0 +1,2794 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes Agent - 全景技术架构文档</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-blue: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-purple: #bc8cff;
+            --accent-orange: #d29922;
+            --accent-red: #f85149;
+            --accent-cyan: #39d2c0;
+            --accent-pink: #f778ba;
+            --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --gradient-3: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --gradient-4: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            --gradient-5: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            --gradient-6: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ========== NAVIGATION ========== */
+        .nav-sidebar {
+            position: fixed;
+            left: 0; top: 0;
+            width: 260px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            z-index: 100;
+            overflow-y: auto;
+            padding: 20px 0;
+        }
+
+        .nav-logo {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 10px;
+        }
+
+        .nav-logo h2 {
+            font-size: 20px;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-logo span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .nav-section {
+            padding: 10px 20px 5px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .nav-link {
+            display: block;
+            padding: 8px 20px 8px 28px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 13px;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-link:hover {
+            color: var(--text-primary);
+            background: var(--bg-tertiary);
+            border-left-color: var(--accent-blue);
+        }
+
+        .nav-link.active {
+            color: var(--accent-blue);
+            border-left-color: var(--accent-blue);
+            background: rgba(88, 166, 255, 0.08);
+        }
+
+        /* ========== MAIN CONTENT ========== */
+        .main-content {
+            margin-left: 260px;
+            min-height: 100vh;
+        }
+
+        /* ========== HERO ========== */
+        .hero {
+            padding: 80px 60px;
+            background: linear-gradient(180deg, rgba(88,166,255,0.06) 0%, transparent 100%);
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .hero h1 .highlight {
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero .subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            max-width: 700px;
+        }
+
+        .hero-badges {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .badge.green { border-color: var(--accent-green); color: var(--accent-green); }
+        .badge.blue { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .badge.purple { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .badge.orange { border-color: var(--accent-orange); color: var(--accent-orange); }
+
+        /* ========== SECTIONS ========== */
+        .section {
+            padding: 60px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-header {
+            margin-bottom: 40px;
+        }
+
+        .section-header h2 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-header .icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 800px;
+        }
+
+        /* ========== ARCHITECTURE DIAGRAM ========== */
+        .arch-diagram {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 40px;
+            overflow-x: auto;
+        }
+
+        .arch-layer {
+            margin-bottom: 24px;
+            position: relative;
+        }
+
+        .arch-layer:last-child { margin-bottom: 0; }
+
+        .layer-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .arch-nodes {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .arch-node {
+            padding: 14px 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            text-align: center;
+            min-width: 140px;
+            transition: all 0.3s;
+            cursor: default;
+            position: relative;
+        }
+
+        .arch-node:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        .arch-node.primary { border-color: var(--accent-blue); background: rgba(88,166,255,0.08); }
+        .arch-node.green { border-color: var(--accent-green); background: rgba(63,185,80,0.08); }
+        .arch-node.purple { border-color: var(--accent-purple); background: rgba(188,140,255,0.08); }
+        .arch-node.orange { border-color: var(--accent-orange); background: rgba(210,153,34,0.08); }
+        .arch-node.red { border-color: var(--accent-red); background: rgba(248,81,73,0.08); }
+        .arch-node.cyan { border-color: var(--accent-cyan); background: rgba(57,210,192,0.08); }
+        .arch-node.pink { border-color: var(--accent-pink); background: rgba(247,120,186,0.08); }
+
+        .arch-node .node-icon {
+            font-size: 22px;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .arch-node .node-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .arch-flow-arrow {
+            text-align: center;
+            padding: 8px 0;
+            color: var(--text-muted);
+            font-size: 24px;
+        }
+
+        /* ========== CARDS GRID ========== */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .card-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .card-icon.blue { background: rgba(88,166,255,0.12); }
+        .card-icon.green { background: rgba(63,185,80,0.12); }
+        .card-icon.purple { background: rgba(188,140,255,0.12); }
+        .card-icon.orange { background: rgba(210,153,34,0.12); }
+        .card-icon.red { background: rgba(248,81,73,0.12); }
+        .card-icon.cyan { background: rgba(57,210,192,0.12); }
+        .card-icon.pink { background: rgba(247,120,186,0.12); }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .card-body {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .card-body ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .card-body ul li {
+            padding: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+
+        .card-body ul li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: var(--accent-blue);
+        }
+
+        /* ========== DETAIL PANEL ========== */
+        .detail-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .detail-header {
+            padding: 20px 24px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .detail-header:hover {
+            background: rgba(88,166,255,0.05);
+        }
+
+        .detail-header .arrow {
+            transition: transform 0.3s;
+            color: var(--text-muted);
+        }
+
+        .detail-header.open .arrow {
+            transform: rotate(90deg);
+        }
+
+        .detail-body {
+            padding: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.4s ease;
+        }
+
+        .detail-body.open {
+            padding: 24px;
+            max-height: 3000px;
+        }
+
+        /* ========== TABLE ========== */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .data-table tr:hover td {
+            background: rgba(88,166,255,0.03);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .tag.blue { background: rgba(88,166,255,0.12); color: var(--accent-blue); }
+        .tag.green { background: rgba(63,185,80,0.12); color: var(--accent-green); }
+        .tag.purple { background: rgba(188,140,255,0.12); color: var(--accent-purple); }
+        .tag.orange { background: rgba(210,153,34,0.12); color: var(--accent-orange); }
+        .tag.red { background: rgba(248,81,73,0.12); color: var(--accent-red); }
+        .tag.cyan { background: rgba(57,210,192,0.12); color: var(--accent-cyan); }
+
+        /* ========== CODE BLOCK ========== */
+        .code-block {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px 20px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            color: var(--accent-green);
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+
+        .code-block .comment { color: var(--text-muted); }
+        .code-block .keyword { color: var(--accent-purple); }
+        .code-block .string { color: var(--accent-orange); }
+
+        /* ========== FLOW DIAGRAM ========== */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 20px;
+        }
+
+        .flow-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .flow-box {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: center;
+            min-width: 120px;
+            border: 1px solid;
+        }
+
+        .flow-arrow-down {
+            color: var(--text-muted);
+            font-size: 20px;
+        }
+
+        .flow-arrow-right {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        /* ========== STAT GRID ========== */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* ========== USAGE SECTION ========== */
+        .usage-step {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 24px;
+            align-items: flex-start;
+        }
+
+        .step-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--gradient-1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-content h4 {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .step-content p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* ========== TREE VIEW ========== */
+        .tree {
+            font-family: 'SF Mono', monospace;
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        .tree .dir { color: var(--accent-blue); font-weight: 600; }
+        .tree .file { color: var(--text-secondary); }
+        .tree .desc { color: var(--text-muted); font-family: -apple-system, sans-serif; margin-left: 8px; }
+
+        /* ========== RESPONSIVE ========== */
+        @media (max-width: 1024px) {
+            .nav-sidebar { display: none; }
+            .main-content { margin-left: 0; }
+            .section { padding: 40px 24px; }
+            .hero { padding: 40px 24px; }
+            .hero h1 { font-size: 32px; }
+        }
+
+        /* ========== SCROLLBAR ========== */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-color); }
+
+        /* ========== TAB SYSTEM ========== */
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ========== TOOLTIP ========== */
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        .tooltip:hover::after { opacity: 1; }
+
+        .highlight-box {
+            border-left: 3px solid var(--accent-blue);
+            padding: 16px 20px;
+            background: rgba(88,166,255,0.05);
+            border-radius: 0 8px 8px 0;
+            margin: 16px 0;
+        }
+
+        .platform-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .platform-card {
+            padding: 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .platform-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+
+        .platform-card .p-icon { font-size: 28px; margin-bottom: 8px; }
+        .platform-card .p-name { font-weight: 600; font-size: 14px; }
+        .platform-card .p-type { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+        .connector {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 24px;
+            padding: 8px 0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ==================== SIDEBAR NAV ==================== -->
+<nav class="nav-sidebar">
+    <div class="nav-logo">
+        <h2>HERMES AGENT</h2>
+        <span>v0.11.0 技术架构文档</span>
+    </div>
+
+    <div class="nav-section">概览</div>
+    <a href="#overview" class="nav-link active">系统总览</a>
+    <a href="#architecture" class="nav-link">核心架构图</a>
+    <a href="#dataflow" class="nav-link">数据流与生命周期</a>
+
+    <div class="nav-section">核心模块</div>
+    <a href="#agent-core" class="nav-link">Agent 核心</a>
+    <a href="#gateway" class="nav-link">网关系统</a>
+    <a href="#tools" class="nav-link">工具系统</a>
+    <a href="#skills" class="nav-link">技能系统</a>
+    <a href="#model" class="nav-link">模型集成</a>
+    <a href="#state" class="nav-link">状态管理</a>
+
+    <div class="nav-section">高级特性</div>
+    <a href="#self-evolution" class="nav-link">自我演进</a>
+    <a href="#orchestration" class="nav-link">多智能体编排</a>
+    <a href="#acp" class="nav-link">ACP 协议适配</a>
+    <a href="#plugins" class="nav-link">插件系统</a>
+    <a href="#trajectory" class="nav-link">轨迹压缩</a>
+
+    <div class="nav-section">接口层</div>
+    <a href="#cli" class="nav-link">CLI 命令行</a>
+    <a href="#web-ui" class="nav-link">Web 界面</a>
+    <a href="#tui" class="nav-link">TUI 终端</a>
+    <a href="#mcp" class="nav-link">MCP 协议</a>
+
+    <div class="nav-section">运维</div>
+    <a href="#deployment" class="nav-link">部署方案</a>
+    <a href="#config" class="nav-link">配置系统</a>
+    <a href="#usage" class="nav-link">使用指南</a>
+</nav>
+
+<!-- ==================== MAIN CONTENT ==================== -->
+<div class="main-content">
+
+<!-- ========== HERO ========== -->
+<section class="hero" id="overview">
+    <h1><span class="highlight">Hermes Agent</span> 全景架构</h1>
+    <p class="subtitle">
+        一个高度模块化、多平台接入的 AI 智能体系统。支持 20+ 消息平台、70+ 工具、自我演进引擎和多智能体编排。
+    </p>
+    <div class="stat-grid">
+        <div class="stat-item">
+            <div class="stat-value">20+</div>
+            <div class="stat-label">消息平台</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">70+</div>
+            <div class="stat-label">工具集成</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">50+</div>
+            <div class="stat-label">内置技能</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">5</div>
+            <div class="stat-label">执行环境</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">v0.11</div>
+            <div class="stat-label">当前版本</div>
+        </div>
+    </div>
+    <div class="hero-badges">
+        <span class="badge green">Python 3.10+</span>
+        <span class="badge blue">OpenRouter 多模型</span>
+        <span class="badge purple">SQLite + FTS5</span>
+        <span class="badge orange">Docker 部署</span>
+        <span class="badge green">MCP 协议</span>
+    </div>
+</section>
+
+<!-- ========== ARCHITECTURE DIAGRAM ========== -->
+<section class="section" id="architecture">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(88,166,255,0.12);">🏗</span>
+            系统核心架构图
+        </h2>
+        <p>Hermes 采用分层架构设计，从用户接口到模型调用形成完整的处理链路</p>
+    </div>
+
+    <div class="arch-diagram">
+        <!-- 用户接口层 -->
+        <div class="arch-layer">
+            <div class="layer-label">📡 用户接口层 (Interface Layer)</div>
+            <div class="arch-nodes">
+                <div class="arch-node cyan">
+                    <span class="node-icon">💬</span>
+                    CLI 命令行
+                    <div class="node-desc">终端交互</div>
+                </div>
+                <div class="arch-node cyan">
+                    <span class="node-icon">🌐</span>
+                    Web UI
+                    <div class="node-desc">浏览器访问</div>
+                </div>
+                <div class="arch-node cyan">
+                    <span class="node-icon">🖥</span>
+                    TUI 终端
+                    <div class="node-desc">富文本终端</div>
+                </div>
+                <div class="arch-node cyan">
+                    <span class="node-icon">🔌</span>
+                    MCP 服务
+                    <div class="node-desc">Claude Desktop 集成</div>
+                </div>
+                <div class="arch-node cyan">
+                    <span class="node-icon">🔗</span>
+                    ACP 协议
+                    <div class="node-desc">Agent 通信协议</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="connector">⬇ ⬇ ⬇</div>
+
+        <!-- 网关层 -->
+        <div class="arch-layer">
+            <div class="layer-label">🚪 网关层 (Gateway Layer) — 20+ 平台适配器</div>
+            <div class="arch-nodes">
+                <div class="arch-node green"><span class="node-icon">💬</span>Discord<div class="node-desc">服务器/私信</div></div>
+                <div class="arch-node green"><span class="node-icon">📱</span>Telegram<div class="node-desc">MarkdownV2</div></div>
+                <div class="arch-node green"><span class="node-icon">🐦</span>Slack<div class="node-desc">Socket Mode</div></div>
+                <div class="arch-node green"><span class="node-icon">🟢</span>WhatsApp<div class="node-desc">多后端支持</div></div>
+                <div class="arch-node green"><span class="node-icon">🟦</span>飞书 Feishu<div class="node-desc">企业集成</div></div>
+                <div class="arch-node green"><span class="node-icon">🟨</span>微信 WeChat<div class="node-desc">iLink Bot</div></div>
+                <div class="arch-node green"><span class="node-icon">🔵</span>钉钉 DingTalk<div class="node-desc">AI 卡片</div></div>
+                <div class="arch-node green"><span class="node-icon">🐧</span>QQ Bot<div class="node-desc">QQ 频道</div></div>
+                <div class="arch-node green"><span class="node-icon">📧</span>Email<div class="node-desc">邮件收发</div></div>
+                <div class="arch-node green"><span class="node-icon">Signal</span>Signal<div class="node-desc">加密通信</div></div>
+                <div class="arch-node green"><span class="node-icon">Matrix</span>Matrix<div class="node-desc">去中心化</div></div>
+                <div class="arch-node green"><span class="node-icon">🏠</span>HomeAssistant<div class="node-desc">智能家居</div></div>
+            </div>
+        </div>
+
+        <div class="connector">⬇</div>
+
+        <!-- 核心引擎层 -->
+        <div class="arch-layer">
+            <div class="layer-label">🧠 核心引擎层 (Core Engine)</div>
+            <div class="arch-nodes">
+                <div class="arch-node primary" style="min-width:220px;">
+                    <span class="node-icon">🤖</span>
+                    AIAgent (run_agent.py)
+                    <div class="node-desc">主循环 · 工具调度 · 上下文管理</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">🔧</span>
+                    ToolRegistry
+                    <div class="node-desc">工具注册 · 发现 · 调度</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">🧩</span>
+                    PromptBuilder
+                    <div class="node-desc">系统提示 · 身份 · 记忆注入</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">📦</span>
+                    ContextCompressor
+                    <div class="node-desc">上下文压缩 · 消息保护</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">💾</span>
+                    SessionDB
+                    <div class="node-desc">SQLite + FTS5 · 会话持久化</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">🧠</span>
+                    MemoryManager
+                    <div class="node-desc">MEMORY.md · USER.md 管理</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="connector">⬇</div>
+
+        <!-- 工具/技能层 -->
+        <div class="arch-layer">
+            <div class="layer-label">🔧 工具与技能层 (Tools & Skills)</div>
+            <div class="arch-nodes">
+                <div class="arch-node orange"><span class="node-icon">📁</span>文件操作<div class="node-desc">读/写/补丁/搜索</div></div>
+                <div class="arch-node orange"><span class="node-icon">🖥</span>终端执行<div class="node-desc">本地/Docker/SSH</div></div>
+                <div class="arch-node orange"><span class="node-icon">🌐</span>浏览器自动化<div class="node-desc">CDP/Camofox</div></div>
+                <div class="arch-node orange"><span class="node-icon">🔍</span>Web 搜索<div class="node-desc">搜索与提取</div></div>
+                <div class="arch-node orange"><span class="node-icon">👁</span>视觉分析<div class="node-desc">图片理解</div></div>
+                <div class="arch-node orange"><span class="node-icon">🎤</span>语音处理<div class="node-desc">TTS/STT</div></div>
+                <div class="arch-node orange"><span class="node-icon">🎨</span>图像生成<div class="node-desc">多模型支持</div></div>
+                <div class="arch-node orange"><span class="node-icon">🧪</span>代码执行<div class="node-desc">沙箱运行</div></div>
+                <div class="arch-node purple"><span class="node-icon">📜</span>技能系统<div class="node-desc">SKILL.md 知识库</div></div>
+                <div class="arch-node purple"><span class="node-icon">🏪</span>技能市场<div class="node-desc">Hub 安装管理</div></div>
+                <div class="arch-node purple"><span class="node-icon">🛡</span>安全工具<div class="node-desc">URL/路径/内容</div></div>
+                <div class="arch-node purple"><span class="node-icon">📊</span>MCP 工具<div class="node-desc">外部协议集成</div></div>
+            </div>
+        </div>
+
+        <div class="connector">⬇</div>
+
+        <!-- 演进层 -->
+        <div class="arch-layer">
+            <div class="layer-label">🧬 自我演进层 (Self-Evolution)</div>
+            <div class="arch-nodes">
+                <div class="arch-node pink">
+                    <span class="node-icon">🌙</span>
+                    DreamEngine 反思引擎
+                    <div class="node-desc">每日凌晨 1:00 自动分析</div>
+                </div>
+                <div class="arch-node pink">
+                    <span class="node-icon">💡</span>
+                    EvolutionProposer 演进提议
+                    <div class="node-desc">策略/技能/记忆/偏好</div>
+                </div>
+                <div class="arch-node pink">
+                    <span class="node-icon">📊</span>
+                    QualityScorer 质量评分
+                    <div class="node-desc">会话质量评估</div>
+                </div>
+                <div class="arch-node pink">
+                    <span class="node-icon">💉</span>
+                    StrategyInjector 策略注入
+                    <div class="node-desc">经验注入到新会话</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="connector">⬇</div>
+
+        <!-- 模型层 -->
+        <div class="arch-layer">
+            <div class="layer-label">🤖 模型接入层 (LLM Provider)</div>
+            <div class="arch-nodes">
+                <div class="arch-node red"><span class="node-icon">🌐</span>OpenRouter<div class="node-desc">统一路由 100+ 模型</div></div>
+                <div class="arch-node red"><span class="node-icon">🟣</span>Anthropic<div class="node-desc">Claude 系列</div></div>
+                <div class="arch-node red"><span class="node-icon">🔵</span>OpenAI<div class="node-desc">GPT 系列</div></div>
+                <div class="arch-node red"><span class="node-icon">🟢</span>Google<div class="node-desc">Gemini 系列</div></div>
+                <div class="arch-node red"><span class="node-icon">🟡</span>xAI<div class="node-desc">Grok 系列</div></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== DATA FLOW ========== -->
+<section class="section" id="dataflow">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(63,185,80,0.12);">🔄</span>
+            数据流与请求生命周期
+        </h2>
+        <p>一条消息从用户发送到回复的完整处理流程</p>
+    </div>
+
+    <div class="arch-diagram">
+        <div class="flow-container" style="align-items:stretch;">
+            <!-- Step 1 -->
+            <div class="flow-row" style="justify-content:flex-start;">
+                <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                    <div class="step-number" style="flex-shrink:0;">1</div>
+                    <div class="flow-box" style="border-color:var(--accent-cyan);background:rgba(57,210,192,0.08);flex:1;">
+                        <strong>消息接收</strong> — 用户通过平台发送消息 → 平台适配器(如飞书/Discord/Telegram)接收原始消息
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="padding-left:18px;">
+                <div class="flow-arrow-down">↓</div>
+                <div class="flow-row" style="justify-content:flex-start;">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                        <div class="step-number" style="flex-shrink:0;">2</div>
+                        <div class="flow-box" style="border-color:var(--accent-green);background:rgba(63,185,80,0.08);flex:1;">
+                            <strong>消息解析与去重</strong> — 解析消息格式(文本/图片/文件/按钮) → 消息去重 → 提取元数据(平台/用户/会话)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div style="padding-left:36px;">
+                <div class="flow-arrow-down">↓</div>
+                <div class="flow-row" style="justify-content:flex-start;">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                        <div class="step-number" style="flex-shrink:0;">3</div>
+                        <div class="flow-box" style="border-color:var(--accent-blue);background:rgba(88,166,255,0.08);flex:1;">
+                            <strong>会话加载与上下文构建</strong> — SessionDB 加载历史 → PromptBuilder 构建系统提示 → 注入记忆/技能/策略/平台提示
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div style="padding-left:54px;">
+                <div class="flow-arrow-down">↓</div>
+                <div class="flow-row" style="justify-content:flex-start;">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                        <div class="step-number" style="flex-shrink:0;">4</div>
+                        <div class="flow-box" style="border-color:var(--accent-purple);background:rgba(188,140,255,0.08);flex:1;">
+                            <strong>LLM 推理与工具调用</strong> — 发送到模型API → 流式响应解析 → 检测工具调用 → 并行执行工具 → 返回结果 → 继续推理循环
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div style="padding-left:72px;">
+                <div class="flow-arrow-down">↓</div>
+                <div class="flow-row" style="justify-content:flex-start;">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                        <div class="step-number" style="flex-shrink:0;">5</div>
+                        <div class="flow-box" style="border-color:var(--accent-orange);background:rgba(210,153,34,0.08);flex:1;">
+                            <strong>流式输出与适配</strong> — StreamConsumer 处理流式文本 → 按平台消息长度分片 → 格式适配(Markdown/HTML/纯文本)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 6 -->
+            <div style="padding-left:90px;">
+                <div class="flow-arrow-down">↓</div>
+                <div class="flow-row" style="justify-content:flex-start;">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1;">
+                        <div class="step-number" style="flex-shrink:0;">6</div>
+                        <div class="flow-box" style="border-color:var(--accent-green);background:rgba(63,185,80,0.08);flex:1;">
+                            <strong>消息发送与持久化</strong> — 通过平台适配器发送回复 → 会话存入SessionDB → 更新使用统计 → 触发自演进遥测
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="highlight-box" style="margin-top:20px;">
+        <strong>中断机制:</strong> 用户可随时发送新消息中断当前处理。系统会安全终止正在进行的工具调用和LLM推理，立即处理新消息。
+    </div>
+</section>
+
+<!-- ========== AGENT CORE ========== -->
+<section class="section" id="agent-core">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(88,166,255,0.12);">🤖</span>
+            Agent 核心系统
+        </h2>
+        <p>AIAgent 是系统的中枢，负责推理循环、工具调度和上下文管理</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon blue">🔄</div>
+                <div>
+                    <div class="card-title">AIAgent 主循环</div>
+                    <div class="card-subtitle">run_agent.py — 核心推理引擎</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>维护迭代预算 (IterationBudget)，线程安全计数</li>
+                    <li>支持工具并行执行，提高效率</li>
+                    <li>上下文超限时自动压缩历史消息</li>
+                    <li>完整的错误分类与故障转移机制</li>
+                    <li>支持中断处理，用户可随时打断</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">🧩</div>
+                <div>
+                    <div class="card-title">PromptBuilder 提示构建</div>
+                    <div class="card-subtitle">agent/prompt_builder.py</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>构建系统提示：身份、能力、约束</li>
+                    <li>注入 MEMORY.md 和 USER.md 内容</li>
+                    <li>加载激活的技能指令</li>
+                    <li>添加平台特定的格式提示</li>
+                    <li>注入自我演进策略 (StrategyInjector)</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon purple">📦</div>
+                <div>
+                    <div class="card-title">ContextCompressor 上下文压缩</div>
+                    <div class="card-subtitle">agent/context_compressor.py</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>保护重要消息（首尾轮次）不被压缩</li>
+                    <li>使用 LLM 摘要化中间历史消息</li>
+                    <li>基于 token 计数精确控制压缩比</li>
+                    <li>支持模型特定的上下文窗口适配</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🧠</div>
+                <div>
+                    <div class="card-title">MemoryManager 记忆管理</div>
+                    <div class="card-subtitle">agent/memory_manager.py</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>持久化记忆 (MEMORY.md) — 跨会话保持</li>
+                    <li>用户画像 (USER.md) — 用户偏好与信息</li>
+                    <li>记忆清洗与格式标准化</li>
+                    <li>定期记忆提醒（nudging 机制）</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon red">⚡</div>
+                <div>
+                    <div class="card-title">ErrorClassifier 错误分类</div>
+                    <div class="card-subtitle">agent/error_classifier.py</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>分类 API 错误：速率限制/认证/超时/内容过滤</li>
+                    <li>决定故障转移策略：重试/切换模型/降级</li>
+                    <li>指数退避 + 抖动重试机制</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">📂</div>
+                <div>
+                    <div class="card-title">SubdirectoryHintTracker</div>
+                    <div class="card-subtitle">agent/subdirectory_hints.py</div>
+                </div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>跟踪当前工作目录上下文</li>
+                    <li>为文件操作提供路径提示</li>
+                    <li>支持多级目录导航</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== GATEWAY ========== -->
+<section class="section" id="gateway">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(63,185,80,0.12);">🚪</span>
+            网关系统
+        </h2>
+        <p>统一的平台适配层，将 20+ 消息平台抽象为统一接口</p>
+    </div>
+
+    <div class="arch-diagram" style="margin-bottom:30px;">
+        <div class="arch-layer">
+            <div class="layer-label">Gateway Runner 核心组件</div>
+            <div class="arch-nodes">
+                <div class="arch-node primary" style="min-width:200px;">
+                    <span class="node-icon">🏃</span>
+                    GatewayRunner
+                    <div class="node-desc">管理所有平台适配器的生命周期</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">📦</span>
+                    SessionStore
+                    <div class="node-desc">跨平台会话状态管理</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">📬</span>
+                    DeliveryRouter
+                    <div class="node-desc">消息路由与分发</div>
+                </div>
+                <div class="arch-node primary" style="min-width:180px;">
+                    <span class="node-icon">🌊</span>
+                    StreamConsumer
+                    <div class="node-desc">流式响应处理</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin-bottom:20px;">支持的平台</h3>
+    <div class="platform-grid">
+        <div class="platform-card" style="border-color:var(--accent-blue);">
+            <div class="p-icon">💬</div>
+            <div class="p-name">Discord</div>
+            <div class="p-type">线程管理 · Slash命令 · 附件</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-blue);">
+            <div class="p-icon">📱</div>
+            <div class="p-name">Telegram</div>
+            <div class="p-type">MarkdownV2 · 内联键盘 · 媒体缓存</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-green);">
+            <div class="p-icon">🐦</div>
+            <div class="p-name">Slack</div>
+            <div class="p-type">Socket Mode · 线程 · 多工作区</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-green);">
+            <div class="p-icon">🟢</div>
+            <div class="p-name">WhatsApp</div>
+            <div class="p-type">Business API · Web.js · Baileys</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-orange);">
+            <div class="p-icon">🟦</div>
+            <div class="p-name">飞书 Feishu</div>
+            <div class="p-type">富文本卡片 · WebSocket · @提及</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-orange);">
+            <div class="p-icon">🟨</div>
+            <div class="p-name">微信 WeChat</div>
+            <div class="p-type">iLink Bot · AES加密 · 二维码登录</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-orange);">
+            <div class="p-icon">🔵</div>
+            <div class="p-name">钉钉 DingTalk</div>
+            <div class="p-type">AI卡片 · 消息线程 · 回调</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-purple);">
+            <div class="p-icon">🐧</div>
+            <div class="p-name">QQ Bot</div>
+            <div class="p-type">QQ频道 · 加密 · 引导流程</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-purple);">
+            <div class="p-icon">📧</div>
+            <div class="p-name">Email</div>
+            <div class="p-type">SMTP/IMAP · 邮件收发</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-cyan);">
+            <div class="p-icon">🔒</div>
+            <div class="p-name">Signal</div>
+            <div class="p-type">端到端加密通信</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-cyan);">
+            <div class="p-icon">🧮</div>
+            <div class="p-name">Matrix</div>
+            <div class="p-type">去中心化协议</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-red);">
+            <div class="p-icon">🏠</div>
+            <div class="p-name">Home Assistant</div>
+            <div class="p-type">智能家居控制</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-red);">
+            <div class="p-icon">🔗</div>
+            <div class="p-name">Webhook</div>
+            <div class="p-type">HTTP Webhook 接入</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-pink);">
+            <div class="p-icon">📡</div>
+            <div class="p-name">API Server</div>
+            <div class="p-type">RESTful API 接口</div>
+        </div>
+        <div class="platform-card" style="border-color:var(--accent-pink);">
+            <div class="p-icon">🏢</div>
+            <div class="p-name">Mattermost</div>
+            <div class="p-type">企业协作平台</div>
+        </div>
+    </div>
+
+    <div class="highlight-box" style="margin-top:20px;">
+        <strong>平台适配器通用能力:</strong> 所有适配器继承 BasePlatformAdapter，提供统一的消息去重、输入状态指示、媒体处理（图片/视频/音频/文档）、命令处理（/new /reset /stop）、错误重试等能力。
+    </div>
+</section>
+
+<!-- ========== TOOLS ========== -->
+<section class="section" id="tools">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(210,153,34,0.12);">🔧</span>
+            工具系统
+        </h2>
+        <p>70+ 工具通过 ToolRegistry 统一注册，按功能分组为工具集 (Toolset)</p>
+    </div>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab(event, 'tab-tools-file')">文件操作</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-term')">终端执行</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-browser')">浏览器</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-web')">Web搜索</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-media')">媒体处理</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-comm')">通信集成</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-ai')">AI能力</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-security')">安全工具</button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-tools-manage')">管理工具</button>
+    </div>
+
+    <!-- 文件操作 -->
+    <div id="tab-tools-file" class="tab-content active">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon blue">📖</div>
+                    <div><div class="card-title">file_tools</div><div class="card-subtitle">核心文件操作</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>文件读取 — 支持大文件分段读取</li>
+                        <li>文件写入 — 原子写入，自动备份</li>
+                        <li>文件补丁 — 精确行级修改</li>
+                        <li>文件搜索 — 正则表达式 + Glob 模式</li>
+                        <li>目录列表 — 递归列举</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">📝</div>
+                    <div><div class="card-title">file_operations</div><div class="card-subtitle">底层文件操作</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>带安全校验的读写操作</li>
+                        <li>二进制文件检测</li>
+                        <li>文件状态追踪 (file_state)</li>
+                        <li>路径安全验证 (path_security)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 终端执行 -->
+    <div id="tab-tools-term" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon orange">💻</div>
+                    <div><div class="card-title">terminal_tool</div><div class="card-subtitle">命令执行引擎</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li><strong>本地执行</strong> — 直接在主机运行</li>
+                        <li><strong>Docker 容器</strong> — 隔离环境执行</li>
+                        <li><strong>SSH 远程</strong> — 远程服务器执行</li>
+                        <li><strong>Modal 云端</strong> — Serverless 执行</li>
+                        <li><strong>Singularity</strong> — HPC 环境执行</li>
+                        <li>进程注册与管理</li>
+                        <li>超时控制与输出截断</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon purple">🧪</div>
+                    <div><div class="card-title">code_execution_tool</div><div class="card-subtitle">代码执行沙箱</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>Python 代码安全执行</li>
+                        <li>输出捕获与错误处理</li>
+                        <li>执行超时保护</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 浏览器 -->
+    <div id="tab-tools-browser" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon cyan">🌐</div>
+                    <div><div class="card-title">browser_tool</div><div class="card-subtitle">浏览器自动化</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li><strong>Browser Use</strong> — 云端浏览器服务</li>
+                        <li><strong>Browserbase</strong> — 企业级浏览器</li>
+                        <li><strong>Firecrawl</strong> — 网页爬取</li>
+                        <li><strong>Camofox</strong> — 反检测浏览器</li>
+                        <li><strong>CDP</strong> — Chrome DevTools 协议</li>
+                        <li>页面截图、点击、输入、导航</li>
+                        <li>表单填写与数据提取</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web搜索 -->
+    <div id="tab-tools-web" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon blue">🔍</div>
+                    <div><div class="card-title">web_tools</div><div class="card-subtitle">Web 搜索与内容提取</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>多搜索引擎支持</li>
+                        <li>网页内容提取与清洗</li>
+                        <li>URL 安全检测</li>
+                        <li>结果缓存与去重</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">🔎</div>
+                    <div><div class="card-title">session_search_tool</div><div class="card-subtitle">会话历史搜索</div></div>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li>FTS5 全文搜索历史会话</li>
+                        <li>按时间/关键词过滤</li>
+                        <li>搜索结果高亮显示</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 媒体处理 -->
+    <div id="tab-tools-media" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon purple">👁</div>
+                    <div><div class="card-title">vision_tools</div><div class="card-subtitle">图像理解</div></div>
+                </div>
+                <div class="card-body"><ul><li>图像内容分析与描述</li><li>OCR 文字识别</li><li>图表数据提取</li><li>多图对比分析</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon pink">🎨</div>
+                    <div><div class="card-title">image_generation_tool</div><div class="card-subtitle">图像生成</div></div>
+                </div>
+                <div class="card-body"><ul><li>OpenAI DALL-E</li><li>xAI Grok 图像</li><li>Flux 模型</li><li>多分辨率支持</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon orange">🎤</div>
+                    <div><div class="card-title">语音工具集</div><div class="card-subtitle">TTS / STT / Voice</div></div>
+                </div>
+                <div class="card-body"><ul><li>tts_tool — 文本转语音</li><li>transcription_tools — 语音转文字</li><li>voice_mode — 语音交互模式</li><li>neutts_synth — NeuTTS 合成</li></ul></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通信集成 -->
+    <div id="tab-tools-comm" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon blue">💬</div>
+                    <div><div class="card-title">discord_tool</div><div class="card-subtitle">Discord 操作</div></div>
+                </div>
+                <div class="card-body"><ul><li>频道管理与消息发送</li><li>文件上传</li><li>线程创建</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">📄</div>
+                    <div><div class="card-title">feishu_doc/drive_tool</div><div class="card-subtitle">飞书文档与云盘</div></div>
+                </div>
+                <div class="card-body"><ul><li>飞书文档读写</li><li>云盘文件管理</li><li>表格数据操作</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon orange">🎵</div>
+                    <div><div class="card-title">spotify_tool</div><div class="card-subtitle">Spotify 集成</div></div>
+                </div>
+                <div class="card-body"><ul><li>搜索歌曲/专辑/播放列表</li><li>播放控制</li><li>播放列表管理</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon purple">✉️</div>
+                    <div><div class="card-title">send_message_tool</div><div class="card-subtitle">跨平台消息发送</div></div>
+                </div>
+                <div class="card-body"><ul><li>统一消息发送接口</li><li>支持所有已连接平台</li><li>媒体附件支持</li></ul></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI能力 -->
+    <div id="tab-tools-ai" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon purple">🧠</div>
+                    <div><div class="card-title">mixture_of_agents_tool</div><div class="card-subtitle">MoA 混合智能体</div></div>
+                </div>
+                <div class="card-body"><ul><li>多模型并行推理</li><li>结果聚合与综合</li><li>投票机制提高准确性</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon blue">🔗</div>
+                    <div><div class="card-title">delegate_tool</div><div class="card-subtitle">任务委派</div></div>
+                </div>
+                <div class="card-body"><ul><li>将子任务委派给专门的 Agent</li><li>并行任务执行</li><li>结果收集与整合</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">🤔</div>
+                    <div><div class="card-title">clarify_tool</div><div class="card-subtitle">用户澄清</div></div>
+                </div>
+                <div class="card-body"><ul><li>主动向用户提问</li><li>获取需求澄清</li><li>确认关键决策</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon orange">🔄</div>
+                    <div><div class="card-title">openrouter_client</div><div class="card-subtitle">OpenRouter 客户端</div></div>
+                </div>
+                <div class="card-body"><ul><li>统一 100+ 模型访问</li><li>智能路由与降级</li><li>成本优化</li></ul></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 安全工具 -->
+    <div id="tab-tools-security" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon red">🛡</div>
+                    <div><div class="card-title">url_safety</div><div class="card-subtitle">URL 安全扫描</div></div>
+                </div>
+                <div class="card-body"><ul><li>URL 恶意检测</li><li>SSRF 防护</li><li>域名黑名单检查</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon red">🔒</div>
+                    <div><div class="card-title">path_security</div><div class="card-subtitle">路径安全验证</div></div>
+                </div>
+                <div class="card-body"><ul><li>路径穿越防护</li><li>敏感目录保护</li><li>权限校验</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon red">🛡</div>
+                    <div><div class="card-title">tirith_security</div><div class="card-subtitle">内容安全</div></div>
+                </div>
+                <div class="card-body"><ul><li>内容安全扫描</li><li>敏感信息检测</li><li>合规性检查</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon red">🔐</div>
+                    <div><div class="card-title">skills_guard</div><div class="card-subtitle">技能安全扫描</div></div>
+                </div>
+                <div class="card-body"><ul><li>技能内容安全审计</li><li>恶意代码检测</li><li>来源验证</li></ul></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理工具 -->
+    <div id="tab-tools-manage" class="tab-content">
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon blue">💾</div>
+                    <div><div class="card-title">memory_tool</div><div class="card-subtitle">记忆管理</div></div>
+                </div>
+                <div class="card-body"><ul><li>读取/写入/更新记忆</li><li>MEMORY.md 管理</li><li>USER.md 管理</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">✅</div>
+                    <div><div class="card-title">todo_tool</div><div class="card-subtitle">任务列表</div></div>
+                </div>
+                <div class="card-body"><ul><li>创建/更新/完成任务</li><li>进度追踪</li><li>优先级管理</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon purple">⏰</div>
+                    <div><div class="card-title">cronjob_tools</div><div class="card-subtitle">定时任务</div></div>
+                </div>
+                <div class="card-body"><ul><li>创建定时任务</li><li>CRON 表达式调度</li><li>任务管理</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon orange">🔌</div>
+                    <div><div class="card-title">mcp_tool</div><div class="card-subtitle">MCP 外部工具</div></div>
+                </div>
+                <div class="card-body"><ul><li>Model Context Protocol 集成</li><li>外部工具调用</li><li>OAuth 认证管理</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon cyan">📊</div>
+                    <div><div class="card-title">budget_config</div><div class="card-subtitle">预算控制</div></div>
+                </div>
+                <div class="card-body"><ul><li>Token 使用预算</li><li>成本追踪</li><li>限额告警</li></ul></div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon pink">🏠</div>
+                    <div><div class="card-title">homeassistant_tool</div><div class="card-subtitle">智能家居</div></div>
+                </div>
+                <div class="card-body"><ul><li>设备控制</li><li>状态查询</li><li>自动化触发</li></ul></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工具集分组 -->
+    <h3 style="margin-top:40px;margin-bottom:20px;">工具集 (Toolset) 分组</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>工具集名称</th>
+                <th>包含工具</th>
+                <th>适用场景</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="tag blue">web</span></td>
+                <td>web_tools, url_safety, session_search</td>
+                <td>Web 搜索、内容提取、信息检索</td>
+            </tr>
+            <tr>
+                <td><span class="tag green">terminal</span></td>
+                <td>terminal_tool, code_execution, process_registry</td>
+                <td>命令执行、脚本运行、系统管理</td>
+            </tr>
+            <tr>
+                <td><span class="tag orange">file</span></td>
+                <td>file_tools, file_operations, file_state, patch_parser</td>
+                <td>文件读写、代码编辑、项目管理</td>
+            </tr>
+            <tr>
+                <td><span class="tag purple">browser</span></td>
+                <td>browser_tool, browser_cdp, browser_camofox</td>
+                <td>网页自动化、数据抓取、截图</td>
+            </tr>
+            <tr>
+                <td><span class="tag red">vision</span></td>
+                <td>vision_tools, image_generation</td>
+                <td>图像分析、图片生成</td>
+            </tr>
+            <tr>
+                <td><span class="tag cyan">research</span></td>
+                <td>web + vision + browser 组合</td>
+                <td>综合研究任务</td>
+            </tr>
+            <tr>
+                <td><span class="tag blue">development</span></td>
+                <td>terminal + file + reasoning</td>
+                <td>软件开发任务</td>
+            </tr>
+            <tr>
+                <td><span class="tag green">creative</span></td>
+                <td>vision + image_generation</td>
+                <td>创意内容生成</td>
+            </tr>
+            <tr>
+                <td><span class="tag orange">skills</span></td>
+                <td>skills_tool, skill_manager, skills_hub, skills_sync</td>
+                <td>技能管理与发现</td>
+            </tr>
+            <tr>
+                <td><span class="tag purple">memory</span></td>
+                <td>memory_tool, session_search</td>
+                <td>记忆管理与检索</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== SKILLS ========== -->
+<section class="section" id="skills">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(188,140,255,0.12);">📜</span>
+            技能系统
+        </h2>
+        <p>可复用的知识文档，将成功经验固化为可加载的技能指令</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon purple">📄</div>
+                <div><div class="card-title">技能文档格式</div><div class="card-subtitle">SKILL.md 标准格式</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="comment">---</span>
+<span class="keyword">name:</span> <span class="string">skill-name</span>
+<span class="keyword">description:</span> <span class="string">技能描述</span>
+<span class="keyword">version:</span> <span class="string">1.0.0</span>
+<span class="keyword">metadata:</span>
+  <span class="keyword">hermes:</span>
+    <span class="keyword">tags:</span> [<span class="string">tag1, tag2</span>]
+<span class="comment">---</span>
+
+<span class="comment"># 技能指令内容</span>
+具体的操作步骤和知识...
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">📂</div>
+                <div><div class="card-title">技能目录结构</div><div class="card-subtitle">~/.hermes/skills/</div></div>
+            </div>
+            <div class="card-body">
+                <div class="tree">
+<span class="dir">~/.hermes/skills/</span>
+├── <span class="dir">software-development/</span> <span class="desc">TDD、调试、规划</span>
+│   ├── tdd-workflow/SKILL.md
+│   ├── debugging/SKILL.md
+│   └── planning/SKILL.md
+├── <span class="dir">productivity/</span> <span class="desc">效率提升</span>
+├── <span class="dir">research/</span> <span class="desc">研究分析</span>
+├── <span class="dir">creative/</span> <span class="desc">创意写作</span>
+├── <span class="dir">github/</span> <span class="desc">GitHub 操作</span>
+├── <span class="dir">mlops/</span> <span class="desc">ML 运维</span>
+├── <span class="dir">media/</span> <span class="desc">媒体处理</span>
+└── <span class="dir">social-media/</span> <span class="desc">社交媒体</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin:24px 0 16px;">技能管理工具</h3>
+    <table class="data-table">
+        <thead>
+            <tr><th>工具</th><th>功能</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="tag blue">skills_list</span></td>
+                <td>列出技能</td>
+                <td>查看所有已安装技能及分类</td>
+            </tr>
+            <tr>
+                <td><span class="tag green">skill_view</span></td>
+                <td>查看技能详情</td>
+                <td>查看技能的完整内容和使用说明</td>
+            </tr>
+            <tr>
+                <td><span class="tag purple">skill_manage</span></td>
+                <td>创建/编辑技能</td>
+                <td>Agent 可自主创建新技能</td>
+            </tr>
+            <tr>
+                <td><span class="tag orange">skills_hub</span></td>
+                <td>技能市场</td>
+                <td>从 GitHub/市场搜索安装技能</td>
+            </tr>
+            <tr>
+                <td><span class="tag cyan">skills_sync</span></td>
+                <td>技能同步</td>
+                <td>同步远程技能仓库更新</td>
+            </tr>
+            <tr>
+                <td><span class="tag red">skills_guard</span></td>
+                <td>安全扫描</td>
+                <td>安装前扫描技能安全性</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== MODEL INTEGRATION ========== -->
+<section class="section" id="model">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(248,81,73,0.12);">🤖</span>
+            模型集成
+        </h2>
+        <p>通过 OpenRouter 统一路由 100+ 模型，支持故障转移和成本优化</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon blue">🔀</div>
+                <div><div class="card-title">OpenRouter 路由</div><div class="card-subtitle">统一模型接入</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>100+ 模型统一 API</li>
+                    <li>智能 Provider 路由策略</li>
+                    <li>自动故障转移</li>
+                    <li>成本与延迟优化</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">🟣</div>
+                <div><div class="card-title">Anthropic Claude</div><div class="card-subtitle">Claude 系列模型</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Claude Opus / Sonnet / Haiku</li>
+                    <li>扩展思维 (Extended Thinking)</li>
+                    <li>大上下文窗口</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🔵</div>
+                <div><div class="card-title">OpenAI GPT</div><div class="card-subtitle">GPT 系列模型</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>GPT-4o / GPT-4 Turbo</li>
+                    <li>Function Calling</li>
+                    <li>JSON Mode</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon purple">🟢</div>
+                <div><div class="card-title">Google Gemini</div><div class="card-subtitle">Gemini 系列模型</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Gemini Pro / Ultra</li>
+                    <li>多模态理解</li>
+                    <li>长上下文支持</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon red">🟡</div>
+                <div><div class="card-title">xAI Grok</div><div class="card-subtitle">Grok 系列模型</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Grok 系列模型</li>
+                    <li>图像生成能力</li>
+                    <li>实时信息访问</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">📐</div>
+                <div><div class="card-title">模型元数据</div><div class="card-subtitle">agent/model_metadata.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>自动获取模型能力</li>
+                    <li>上下文窗口长度适配</li>
+                    <li>模型特定参数优化</li>
+                    <li>Prompt Caching 配置</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== STATE MANAGEMENT ========== -->
+<section class="section" id="state">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(57,210,192,0.12);">💾</span>
+            状态管理
+        </h2>
+        <p>基于 SQLite + FTS5 的持久化状态系统，支持全文搜索和会话链接</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card" style="grid-column: span 2;">
+            <div class="card-header">
+                <div class="card-icon cyan">🗄</div>
+                <div><div class="card-title">SessionDB 数据库架构</div><div class="card-subtitle">hermes_state.py — SQLite WAL 模式</div></div>
+            </div>
+            <div class="card-body">
+                <table class="data-table">
+                    <thead>
+                        <tr><th>数据表</th><th>功能</th><th>关键特性</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="tag blue">sessions</span></td>
+                            <td>会话存储</td>
+                            <td>会话ID、标题、时间戳、平台信息、模型</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag green">messages</span></td>
+                            <td>消息存储</td>
+                            <td>角色、内容、工具调用、Token 统计</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag purple">metadata</span></td>
+                            <td>元数据</td>
+                            <td>配置项、使用统计、成本追踪</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag orange">FTS5 索引</span></td>
+                            <td>全文搜索</td>
+                            <td>跨所有消息的全文搜索能力</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🔗</div>
+                <div><div class="card-title">会话链接</div><div class="card-subtitle">Session Chaining</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>上下文超限时自动拆分会话</li>
+                    <li>新旧会话通过链接关联</li>
+                    <li>保留关键上下文连续性</li>
+                    <li>支持手动 /reset 新建会话</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== SELF EVOLUTION ========== -->
+<section class="section" id="self-evolution">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(247,120,186,0.12);">🧬</span>
+            自我演进系统
+        </h2>
+        <p>通过夜间反思、质量评估和策略注入实现持续自我优化</p>
+    </div>
+
+    <div class="arch-diagram" style="margin-bottom:30px;">
+        <div class="arch-layer">
+            <div class="layer-label">自我演进工作流</div>
+            <div class="arch-nodes" style="flex-wrap:nowrap;">
+                <div class="arch-node pink" style="min-width:180px;">
+                    <span class="node-icon">📊</span>
+                    遥测数据收集
+                    <div class="node-desc">每次会话记录</div>
+                </div>
+                <div style="font-size:24px;color:var(--text-muted);">→</div>
+                <div class="arch-node pink" style="min-width:180px;">
+                    <span class="node-icon">🌙</span>
+                    DreamEngine 夜间反思
+                    <div class="node-desc">凌晨 1:00 分析</div>
+                </div>
+                <div style="font-size:24px;color:var(--text-muted);">→</div>
+                <div class="arch-node pink" style="min-width:180px;">
+                    <span class="node-icon">💡</span>
+                    EvolutionProposer
+                    <div class="node-desc">生成改进提案</div>
+                </div>
+                <div style="font-size:24px;color:var(--text-muted);">→</div>
+                <div class="arch-node pink" style="min-width:180px;">
+                    <span class="node-icon">✅</span>
+                    审批与执行
+                    <div class="node-desc">风险评估 + 回滚</div>
+                </div>
+                <div style="font-size:24px;color:var(--text-muted);">→</div>
+                <div class="arch-node pink" style="min-width:180px;">
+                    <span class="node-icon">💉</span>
+                    StrategyInjector
+                    <div class="node-desc">策略注入新会话</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon pink">🌙</div>
+                <div><div class="card-title">DreamEngine 反思引擎</div><div class="card-subtitle">self_evolution/reflection_engine.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>每日凌晨 1:00 自动运行</li>
+                    <li>分析过去 24 小时的会话数据</li>
+                    <li>检测错误模式、成功模式、低效操作</li>
+                    <li>生成可操作的洞察建议</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon pink">💡</div>
+                <div><div class="card-title">EvolutionProposer 演进提议</div><div class="card-subtitle">self_evolution/evolution_proposer.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>将反思洞察转化为具体提案</li>
+                    <li>提案类型：策略/技能/记忆/工具偏好</li>
+                    <li>每项提案附带风险评估</li>
+                    <li>支持自动回滚机制</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon pink">📊</div>
+                <div><div class="card-title">QualityScorer 质量评分</div><div class="card-subtitle">self_evolution/quality_scorer.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>多维度评估会话质量</li>
+                    <li>错误率、完成率、效率指标</li>
+                    <li>用户满意度推断</li>
+                    <li>趋势分析与告警</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon pink">🗄</div>
+                <div><div class="card-title">持久化存储</div><div class="card-subtitle">self_evolution/db.py + strategy_store.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>SQLite 存储遥测数据</li>
+                    <li>策略持久化 (strategy_store)</li>
+                    <li>演进历史追踪</li>
+                    <li>Git 变更分析 (git_analyzer)</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="highlight-box" style="margin-top:20px;">
+        <strong>演进提案类型:</strong>
+        <span class="tag blue">策略优化</span>
+        <span class="tag green">新技能创建</span>
+        <span class="tag purple">记忆更新</span>
+        <span class="tag orange">工具偏好调整</span>
+        <br><br>
+        <strong>Slash 命令:</strong> <code>/evolve</code> 触发演进 · <code>/reflect</code> 立即反思 · <code>/evolution_status</code> 查看状态
+    </div>
+</section>
+
+<!-- ========== ORCHESTRATION ========== -->
+<section class="section" id="orchestration">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(88,166,255,0.12);">🎭</span>
+            多智能体编排
+        </h2>
+        <p>支持多 Agent 协作，提供并行、串行、MapReduce、DAG 四种编排模式</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon blue">🔄</div>
+                <div><div class="card-title">parallel 并行模式</div><div class="card-subtitle">多 Agent 同时执行</div></div>
+            </div>
+            <div class="card-body">
+                <p>多个 Agent 同时处理不同子任务，结果汇总后返回。适用于独立子任务并行处理。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">➡️</div>
+                <div><div class="card-title">sequential 串行模式</div><div class="card-subtitle">按序依次执行</div></div>
+            </div>
+            <div class="card-body">
+                <p>Agent 按顺序依次执行，前一个的输出作为后一个的输入。适用于有依赖关系的流水线任务。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon purple">🗺</div>
+                <div><div class="card-title">map_reduce 模式</div><div class="card-subtitle">分而治之</div></div>
+            </div>
+            <div class="card-body">
+                <p>将任务拆分给多个 Agent 并行处理(map)，再由汇总 Agent 合并结果(reduce)。适用于大规模数据处理。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🔗</div>
+                <div><div class="card-title">DAG 有向无环图</div><div class="card-subtitle">复杂依赖编排</div></div>
+            </div>
+            <div class="card-body">
+                <p>定义任务间的复杂依赖关系，自动拓扑排序执行。支持条件分支和并行执行路径。</p>
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin:20px 0 16px;">编排工具</h3>
+    <table class="data-table">
+        <thead><tr><th>工具</th><th>功能</th></tr></thead>
+        <tbody>
+            <tr><td><span class="tag blue">spawn_agent</span></td><td>创建新的子 Agent</td></tr>
+            <tr><td><span class="tag green">agent_status</span></td><td>查询 Agent 执行状态</td></tr>
+            <tr><td><span class="tag purple">send_agent_message</span></td><td>Agent 间消息传递</td></tr>
+            <tr><td><span class="tag orange">orchestrate_task</span></td><td>启动编排任务</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== ACP ========== -->
+<section class="section" id="acp">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(63,185,80,0.12);">🔗</span>
+            ACP 协议适配
+        </h2>
+        <p>Agent Communication Protocol — 通过 JSON-RPC 2.0 标准化 Agent 间通信</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">🖥</div>
+                <div><div class="card-title">ACPServer</div><div class="card-subtitle">acp_adapter/server.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>JSON-RPC 2.0 协议实现</li>
+                    <li>会话管理与认证</li>
+                    <li>工具暴露与调用代理</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">📨</div>
+                <div><div class="card-title">ACPSession</div><div class="card-subtitle">acp_adapter/session.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>ACP 会话生命周期管理</li>
+                    <li>消息格式转换</li>
+                    <li>状态追踪</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="code-block" style="margin-top:16px;">
+<span class="comment"># 启动 ACP 服务</span>
+<span class="keyword">python</span> -m acp_adapter.entry
+<span class="comment"># 或通过 CLI</span>
+<span class="keyword">hermes</span> acp
+    </div>
+</section>
+
+<!-- ========== PLUGINS ========== -->
+<section class="section" id="plugins">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(210,153,34,0.12);">🔌</span>
+            插件系统
+        </h2>
+        <p>模块化插件架构，支持自动发现和动态加载</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🎨</div>
+                <div><div class="card-title">图像生成插件</div><div class="card-subtitle">image_gen/</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>OpenAI DALL-E 插件</li>
+                    <li>xAI Grok 图像插件</li>
+                    <li>Codex 图像生成</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🧠</div>
+                <div><div class="card-title">记忆插件</div><div class="card-subtitle">memory/</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Hindsight — 回溯记忆</li>
+                    <li>RetainDB — 数据库记忆</li>
+                    <li>OpenViking — 向量记忆</li>
+                    <li>Holographic — 全息记忆</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🧹</div>
+                <div><div class="card-title">磁盘清理</div><div class="card-subtitle">disk-cleanup/</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>自动清理临时文件</li>
+                    <li>磁盘空间监控</li>
+                    <li>可配置的清理策略</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🧬</div>
+                <div><div class="card-title">自我演进插件</div><div class="card-subtitle">self_evolution/</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>通过 PluginManager 注册</li>
+                    <li>Hook 点：会话结束、消息处理</li>
+                    <li>遥测数据收集</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== TRAJECTORY COMPRESSOR ========== -->
+<section class="section" id="trajectory">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(188,140,255,0.12);">🗜</span>
+            轨迹压缩
+        </h2>
+        <p>使用 LLM 对长对话轨迹进行智能压缩，保留关键信息</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card" style="grid-column: span 2;">
+            <div class="card-header">
+                <div class="card-icon purple">🗜</div>
+                <div><div class="card-title">TrajectoryCompressor 压缩引擎</div><div class="card-subtitle">trajectory_compressor.py</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li><strong>保护逻辑</strong> — 首轮和末轮对话始终保留</li>
+                    <li><strong>智能摘要</strong> — 使用 LLM 对中间部分生成摘要</li>
+                    <li><strong>Token 目标</strong> — 精确控制压缩后的 Token 数量</li>
+                    <li><strong>配置灵活</strong> — 可自定义保护规则、压缩模型、目标阈值</li>
+                </ul>
+                <div class="code-block">
+<span class="comment"># 使用示例</span>
+<span class="keyword">python</span> trajectory_compressor.py --input=trajectories.jsonl
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== CLI ========== -->
+<section class="section" id="cli">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(57,210,192,0.12);">💬</span>
+            CLI 命令行接口
+        </h2>
+        <p>基于 prompt_toolkit 的交互式终端界面</p>
+    </div>
+
+    <div class="code-block" style="margin-bottom:20px;">
+<span class="comment"># 启动交互模式</span>
+<span class="keyword">python</span> cli.py
+
+<span class="comment"># 单次查询</span>
+<span class="keyword">python</span> cli.py -q <span class="string">"你的问题"</span>
+
+<span class="comment"># 指定工具集</span>
+<span class="keyword">python</span> cli.py --toolsets web,terminal
+
+<span class="comment"># 指定技能</span>
+<span class="keyword">python</span> cli.py --skills hermes-agent-dev,github-auth
+
+<span class="comment"># 网关模式</span>
+<span class="keyword">python</span> cli.py --gateway
+
+<span class="comment"># 批处理</span>
+<span class="keyword">python</span> batch_runner.py --dataset_file=data.jsonl --batch_size=10
+    </div>
+
+    <h3 style="margin-bottom:16px;">内置 Slash 命令</h3>
+    <table class="data-table">
+        <thead><tr><th>命令</th><th>功能</th></tr></thead>
+        <tbody>
+            <tr><td><code>/new</code> / <code>/reset</code></td><td>新建会话</td></tr>
+            <tr><td><code>/stop</code></td><td>停止当前生成</td></tr>
+            <tr><td><code>/skills</code></td><td>列出/管理技能</td></tr>
+            <tr><td><code>/evolve</code></td><td>触发自我演进</td></tr>
+            <tr><td><code>/reflect</code></td><td>立即执行反思</td></tr>
+            <tr><td><code>/evolution_status</code></td><td>查看演进状态</td></tr>
+            <tr><td><code>/compact</code></td><td>手动压缩上下文</td></tr>
+            <tr><td><code>/model</code></td><td>切换模型</td></tr>
+            <tr><td><code>/cost</code></td><td>查看使用成本</td></tr>
+            <tr><td><code>/voice</code></td><td>切换语音模式</td></tr>
+            <tr><td><code>/help</code></td><td>帮助信息</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== WEB UI ========== -->
+<section class="section" id="web-ui">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(88,166,255,0.12);">🌐</span>
+            Web 界面
+        </h2>
+        <p>基于 React + TypeScript + Vite 构建的 Web 聊天界面</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon blue">💻</div>
+                <div><div class="card-title">技术栈</div><div class="card-subtitle">web/</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>React + TypeScript 前端</li>
+                    <li>Vite 构建工具</li>
+                    <li>实时流式响应</li>
+                    <li>国际化 (i18n) 支持</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">✨</div>
+                <div><div class="card-title">功能特性</div><div class="card-subtitle">Web 界面能力</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Web 聊天界面</li>
+                    <li>会话管理</li>
+                    <li>文件上传支持</li>
+                    <li>响应式设计</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== TUI ========== -->
+<section class="section" id="tui">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(63,185,80,0.12);">🖥</span>
+            TUI 终端界面
+        </h2>
+        <p>两种 TUI 实现：独立 React 终端 和 Python 网关终端</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">🖥</div>
+                <div><div class="card-title">独立 TUI</div><div class="card-subtitle">ui-tui/ — React 终端</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>独立 React/TypeScript 应用</li>
+                    <li>终端内富文本渲染</li>
+                    <li>独立的聊天界面</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">📡</div>
+                <div><div class="card-title">网关 TUI</div><div class="card-subtitle">tui_gateway/ — Python 终端</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>Python 终端界面</li>
+                    <li>直接与 Gateway 通信</li>
+                    <li>Slash 命令支持</li>
+                    <li>实时消息显示</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== MCP ========== -->
+<section class="section" id="mcp">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(188,140,255,0.12);">🔌</span>
+            MCP 协议服务
+        </h2>
+        <p>将 Hermes 会话暴露为 MCP 工具，支持 Claude Desktop 等客户端接入</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card" style="grid-column: span 2;">
+            <div class="card-header">
+                <div class="card-icon purple">🔌</div>
+                <div><div class="card-title">MCPServer — FastMCP 实现</div><div class="card-subtitle">mcp_serve.py</div></div>
+            </div>
+            <div class="card-body">
+                <table class="data-table">
+                    <thead><tr><th>工具类别</th><th>可用工具</th><th>功能</th></tr></thead>
+                    <tbody>
+                        <tr><td><span class="tag blue">会话管理</span></td><td>conversations_list, conversation_get</td><td>列出和获取会话</td></tr>
+                        <tr><td><span class="tag green">消息读取</span></td><td>messages_read</td><td>读取会话消息历史</td></tr>
+                        <tr><td><span class="tag purple">事件轮询</span></td><td>events_poll, events_wait</td><td>等待和处理事件</td></tr>
+                        <tr><td><span class="tag orange">权限响应</span></td><td>permissions_respond</td><td>处理权限请求</td></tr>
+                        <tr><td><span class="tag cyan">频道管理</span></td><td>channels_list, attachments_fetch</td><td>频道和附件管理</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="code-block" style="margin-top:16px;">
+<span class="comment"># 启动 MCP 服务</span>
+<span class="keyword">hermes</span> mcp serve
+
+<span class="comment"># Claude Desktop 配置</span>
+{
+  <span class="string">"mcpServers"</span>: {
+    <span class="string">"hermes"</span>: {
+      <span class="keyword">"command"</span>: <span class="string">"hermes"</span>,
+      <span class="keyword">"args"</span>: [<span class="string">"mcp"</span>, <span class="string">"serve"</span>]
+    }
+  }
+}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== DEPLOYMENT ========== -->
+<section class="section" id="deployment">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(248,81,73,0.12);">🚀</span>
+            部署方案
+        </h2>
+        <p>支持 Docker 容器化部署和本地安装两种方式</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon red">🐳</div>
+                <div><div class="card-title">Docker 部署</div><div class="card-subtitle">推荐方式</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="comment"># 使用 docker-compose</span>
+<span class="keyword">docker-compose</span> up -d
+
+<span class="comment"># 或直接构建</span>
+<span class="keyword">docker</span> build -t hermes .
+<span class="keyword">docker</span> run -v ~/.hermes:/home/hermes/.hermes hermes
+                </div>
+                <ul style="margin-top:12px;">
+                    <li>多阶段构建优化镜像大小</li>
+                    <li>非 root 用户运行</li>
+                    <li>Volume 挂载 ~/.hermes 持久化</li>
+                    <li>包含 Gateway + Dashboard 服务</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">📦</div>
+                <div><div class="card-title">本地安装</div><div class="card-subtitle">setup-hermes.sh</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="comment"># 一键安装</span>
+<span class="keyword">bash</span> setup-hermes.sh
+                </div>
+                <ul style="margin-top:12px;">
+                    <li>自动安装 uv 包管理器</li>
+                    <li>创建虚拟环境</li>
+                    <li>安装所有依赖</li>
+                    <li>创建 CLI 符号链接</li>
+                    <li>支持 macOS / Linux / Termux</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== CONFIG ========== -->
+<section class="section" id="config">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(57,210,192,0.12);">⚙️</span>
+            配置系统
+        </h2>
+        <p>多层级配置：环境变量 → YAML 配置 → CLI 参数</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">📄</div>
+                <div><div class="card-title">cli-config.yaml</div><div class="card-subtitle">主配置文件</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>模型配置 — 多 Provider、路由策略</li>
+                    <li>终端设置 — 本地/SSH/Docker/Singularity</li>
+                    <li>OpenRouter 路由 — Provider 选择策略</li>
+                    <li>超时与重试策略</li>
+                    <li>工具集选择</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">🔑</div>
+                <div><div class="card-title">.env 环境变量</div><div class="card-subtitle">密钥与平台配置</div></div>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>LLM Provider API Keys</li>
+                    <li>平台 Token（飞书/Discord/Telegram...）</li>
+                    <li>自定义 Base URL</li>
+                    <li>安全设置</li>
+                    <li>功能开关</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">📁</div>
+                <div><div class="card-title">目录结构</div><div class="card-subtitle">~/.hermes/</div></div>
+            </div>
+            <div class="card-body">
+                <div class="tree">
+<span class="dir">~/.hermes/</span>
+├── <span class="dir">sessions/</span> <span class="desc">会话数据库</span>
+├── <span class="dir">skills/</span> <span class="desc">技能库</span>
+├── <span class="dir">plugins/</span> <span class="desc">插件目录</span>
+├── <span class="dir">cache/</span> <span class="desc">缓存文件</span>
+├── <span class="dir">logs/</span> <span class="desc">日志目录</span>
+├── <span class="file">config.yaml</span> <span class="desc">用户配置</span>
+├── <span class="file">MEMORY.md</span> <span class="desc">持久记忆</span>
+└── <span class="file">USER.md</span> <span class="desc">用户画像</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== USAGE GUIDE ========== -->
+<section class="section" id="usage">
+    <div class="section-header">
+        <h2>
+            <span class="icon" style="background:rgba(88,166,255,0.12);">📖</span>
+            使用指南
+        </h2>
+        <p>快速上手 Hermes Agent 的各项功能</p>
+    </div>
+
+    <h3 style="margin-bottom:20px;">快速开始</h3>
+
+    <div class="usage-step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+            <h4>安装 Hermes</h4>
+            <p>通过一键脚本安装：<code>bash setup-hermes.sh</code>，或使用 Docker：<code>docker-compose up -d</code></p>
+        </div>
+    </div>
+
+    <div class="usage-step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+            <h4>配置 API Key</h4>
+            <p>在 <code>.env</code> 或 <code>cli-config.yaml</code> 中设置 OpenRouter API Key（或其他模型 Provider 的 Key）</p>
+        </div>
+    </div>
+
+    <div class="usage-step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+            <h4>启动 CLI</h4>
+            <p>运行 <code>python cli.py</code> 进入交互式对话。使用 <code>-q</code> 参数进行单次查询。</p>
+        </div>
+    </div>
+
+    <div class="usage-step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+            <h4>选择工具集</h4>
+            <p>通过 <code>--toolsets web,terminal,file</code> 选择需要的工具集，或使用默认全量工具。</p>
+        </div>
+    </div>
+
+    <div class="usage-step">
+        <div class="step-number">5</div>
+        <div class="step-content">
+            <h4>接入平台</h4>
+            <p>配置平台 Token 后启动网关模式：<code>python cli.py --gateway</code>，自动连接所有配置的平台。</p>
+        </div>
+    </div>
+
+    <h3 style="margin:30px 0 20px;">常见使用场景</h3>
+
+    <div class="cards-grid">
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon blue">💻</div>
+                <div><div class="card-title">软件开发助手</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="keyword">python</span> cli.py --toolsets terminal,file --skills software-development
+                </div>
+                <p style="margin-top:8px;">配备终端执行和文件操作工具，加载软件开发技能，可进行代码编写、调试、测试。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon green">🔍</div>
+                <div><div class="card-title">研究分析助手</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="keyword">python</span> cli.py --toolsets research --skills research
+                </div>
+                <p style="margin-top:8px;">使用 Web 搜索 + 浏览器 + 视觉分析，进行全面的信息搜集和数据分析。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon purple">🤖</div>
+                <div><div class="card-title">多平台机器人</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="keyword">python</span> cli.py --gateway
+                </div>
+                <p style="margin-top:8px;">启动网关模式，同时接入 Discord、Telegram、飞书等多个平台，作为统一 AI 助手。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon orange">🎭</div>
+                <div><div class="card-title">多 Agent 协作</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="comment"># 在对话中使用编排工具</span>
+<span class="string">"使用 map_reduce 模式分析这批数据"</span>
+                </div>
+                <p style="margin-top:8px;">通过 Agent Orchestration 工具，自动创建子 Agent 并行处理复杂任务。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon pink">🧬</div>
+                <div><div class="card-title">自我演进模式</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="comment"># 查看演进状态</span>
+/evolution_status
+<span class="comment"># 手动触发反思</span>
+/reflect
+                </div>
+                <p style="margin-top:8px;">系统自动在夜间分析会话模式，生成优化策略并注入后续会话。</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cyan">📊</div>
+                <div><div class="card-title">批量评估</div></div>
+            </div>
+            <div class="card-body">
+                <div class="code-block">
+<span class="keyword">python</span> batch_runner.py \
+  --dataset_file=tasks.jsonl \
+  --batch_size=10
+                </div>
+                <p style="margin-top:8px;">批量处理评估数据集，支持并行执行、断点续传和统计聚合。</p>
+            </div>
+        </div>
+    </div>
+
+    <h3 style="margin:30px 0 20px;">核心文件速查</h3>
+    <table class="data-table">
+        <thead><tr><th>文件</th><th>用途</th><th>行数规模</th></tr></thead>
+        <tbody>
+            <tr><td><code>run_agent.py</code></td><td>Agent 主循环和推理引擎</td><td><span class="tag red">~19K 行</span></td></tr>
+            <tr><td><code>cli.py</code></td><td>CLI 交互界面</td><td><span class="tag red">~15K 行</span></td></tr>
+            <tr><td><code>gateway/run.py</code></td><td>网关主运行器</td><td><span class="tag red">~16K 行</span></td></tr>
+            <tr><td><code>hermes_state.py</code></td><td>状态持久化管理</td><td><span class="tag orange">~2K 行</span></td></tr>
+            <tr><td><code>model_tools.py</code></td><td>模型工具调度</td><td><span class="tag orange">~800 行</span></td></tr>
+            <tr><td><code>toolsets.py</code></td><td>工具集定义</td><td><span class="tag blue">~700 行</span></td></tr>
+            <tr><td><code>trajectory_compressor.py</code></td><td>轨迹压缩引擎</td><td><span class="tag orange">~2K 行</span></td></tr>
+            <tr><td><code>batch_runner.py</code></td><td>批量评估运行器</td><td><span class="tag orange">~1.7K 行</span></td></tr>
+            <tr><td><code>mcp_serve.py</code></td><td>MCP 协议服务</td><td><span class="tag orange">~900 行</span></td></tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== FOOTER ========== -->
+<footer style="padding:40px 60px;text-align:center;border-top:1px solid var(--border-color);">
+    <p style="color:var(--text-muted);font-size:14px;">
+        Hermes Agent v0.11.0 技术架构文档 · 自动生成于 2026-04-24
+    </p>
+    <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">
+        本文档基于代码库实际分析生成，涵盖系统架构、功能模块、配置选项和使用指南
+    </p>
+</footer>
+
+</div><!-- end main-content -->
+
+<!-- ========== JAVASCRIPT ========== -->
+<script>
+// Tab switching
+function switchTab(event, tabId) {
+    const tabBar = event.target.closest('.tab-bar');
+    const section = tabBar.parentElement;
+
+    tabBar.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    section.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
+}
+
+// Smooth scroll for nav links
+document.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', function(e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const target = document.getElementById(targetId);
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        this.classList.add('active');
+    });
+});
+
+// Active nav on scroll
+const sections = document.querySelectorAll('.section, .hero');
+const navLinks = document.querySelectorAll('.nav-link');
+
+window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(section => {
+        const sectionTop = section.offsetTop - 100;
+        if (window.scrollY >= sectionTop) {
+            current = section.getAttribute('id');
+        }
+    });
+
+    navLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('href') === '#' + current) {
+            link.classList.add('active');
+        }
+    });
+});
+
+// Collapsible details
+document.querySelectorAll('.detail-header').forEach(header => {
+    header.addEventListener('click', function() {
+        this.classList.toggle('open');
+        this.nextElementSibling.classList.toggle('open');
+    });
+});
+</script>
+
+</body>
+</html>

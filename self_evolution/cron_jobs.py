@@ -90,11 +90,76 @@ def run_propose_job():
     """Execute the proposal push job.
 
     Called by the cron system at 19:00.
+
+    Includes auto-compensation: if recent reflection reports have no
+    corresponding proposals, generates them before pushing to Feishu.
     """
+    _compensate_proposals()
+
     from self_evolution.feishu_notifier import FeishuNotifier
 
     notifier = FeishuNotifier()
     notifier.send_daily_report()
+
+
+def _compensate_proposals():
+    """Generate proposals for recent reports that have none.
+
+    Handles the case where DreamEngine ran but generate_proposals was
+    skipped (e.g. hermes agent cron executed report creation without
+    calling the proposal step).
+    """
+    from self_evolution import db
+    import json
+    import time
+
+    # Find reports from the last 3 days that have no proposals
+    cutoff = time.time() - (3 * 86400)
+    recent_reports = db.fetch_all(
+        "reflection_reports",
+        where="created_at >= ?",
+        params=(cutoff,),
+        order_by="created_at DESC",
+    )
+
+    if not recent_reports:
+        return
+
+    # Get report IDs that already have proposals
+    existing = db.fetch_all("evolution_proposals", where="1=1")
+    covered_ids = {row.get("report_id") for row in existing if row.get("report_id")}
+
+    generated = 0
+    for report_row in recent_reports:
+        rid = report_row.get("id")
+        if rid is None or rid in covered_ids:
+            continue
+
+        # Reconstruct a minimal ReflectionReport for proposal generation
+        from self_evolution.models import ReflectionReport
+        report = ReflectionReport(
+            period_start=report_row.get("period_start", 0),
+            period_end=report_row.get("period_end", 0),
+            sessions_analyzed=report_row.get("sessions_analyzed", 0),
+            avg_score=report_row.get("avg_score", 0),
+            error_summary=report_row.get("error_summary", ""),
+            waste_summary=report_row.get("waste_summary", ""),
+            worst_patterns=json.loads(report_row.get("worst_patterns", "[]") or "[]"),
+            best_patterns=json.loads(report_row.get("best_patterns", "[]") or "[]"),
+            recommendations=json.loads(report_row.get("recommendations", "[]") or "[]"),
+        )
+
+        from self_evolution.evolution_proposer import generate_proposals
+        proposals = generate_proposals(report, report_id=rid)
+        for p in proposals:
+            try:
+                db.insert("evolution_proposals", p.to_db_row())
+                generated += 1
+            except Exception:
+                pass
+
+    if generated:
+        logger.info("Compensated %d proposals from orphaned reports", generated)
 
 
 def _load_jobs() -> list:

@@ -110,7 +110,8 @@ from gateway.platforms.base import (
     cache_audio_from_bytes,
     cache_image_from_bytes,
 )
-from gateway.status import acquire_scoped_lock, release_scoped_lock
+from gateway.status import acquire_scoped_lock as _acquire_scoped_lock_impl, release_scoped_lock as _release_scoped_lock_impl
+import sys as _sys
 from hermes_constants import get_hermes_home
 
 from .media import FeishuMediaMixin
@@ -170,6 +171,32 @@ from .constants import _POST_CONTENT_INVALID_RE, _MARKDOWN_HINT_RE
 from .websocket import _run_official_feishu_ws_client  # re-exported for test backward-compat
 
 logger = logging.getLogger(__name__)
+
+# Module-level references that tests can override via
+# ``patch("gateway.platforms.feishu.acquire_scoped_lock", ...)``.
+# We store the real implementation under a private name and resolve through
+# the package namespace at call time so that the test patch takes effect.
+_pkg_module = _sys.modules.get(__package__)
+
+
+def acquire_scoped_lock(*args, **kwargs):
+    """Dispatch through the package namespace so test patches work.
+
+    Uses getattr on ``adapter`` (not the parent package) to avoid
+    infinite recursion caused by __init__.py re-exporting this name.
+    """
+    fn = getattr(_sys.modules[__name__], "acquire_scoped_lock", _acquire_scoped_lock_impl)
+    if fn is acquire_scoped_lock:
+        fn = _acquire_scoped_lock_impl
+    return fn(*args, **kwargs)
+
+
+def release_scoped_lock(*args, **kwargs):
+    """Dispatch through the package namespace so test patches work."""
+    fn = getattr(_sys.modules[__name__], "release_scoped_lock", _release_scoped_lock_impl)
+    if fn is release_scoped_lock:
+        fn = _release_scoped_lock_impl
+    return fn(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------

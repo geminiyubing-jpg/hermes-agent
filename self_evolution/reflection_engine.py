@@ -18,6 +18,7 @@ We extend this pattern with:
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -69,6 +70,26 @@ class DreamEngine:
             max_runtime_seconds: Hard timeout in seconds. 0 = no limit.
                 If exceeded, stops at the next step boundary and returns None.
         """
+        from self_evolution.paths import DATA_DIR
+        lock_path = DATA_DIR / ".dream.lock"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, IOError):
+            logger.warning("Dream engine already running, skipping this invocation")
+            lock_fd.close()
+            return None
+
+        try:
+            return self._run_inner(hours, max_runtime_seconds)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+    def _run_inner(self, hours: int, max_runtime_seconds: int = 0) -> Optional[ReflectionReport]:
+        """Inner run logic, called after acquiring the lock."""
         logger.info("Dream engine starting — analyzing last %d hours", hours)
 
         deadline = time.time() + max_runtime_seconds if max_runtime_seconds > 0 else 0

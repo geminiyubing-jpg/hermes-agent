@@ -190,13 +190,13 @@ def _deduplicate(proposals: List[Proposal]) -> List[Proposal]:
 def _count_successful_sessions(pattern: str, report: ReflectionReport) -> int:
     """Count successful sessions relevant to this pattern.
 
-    Queries session_scores for sessions with composite_score ≥ 0.7
-    and matching task_category keywords from the pattern.
+    Queries session_scores for sessions with composite_score >= 0.7
+    whose task_category overlaps with keywords extracted from the pattern.
+    Falls back to total high-score count if no category keywords match.
     """
     try:
         from self_evolution import db
 
-        # Extract potential category keywords from pattern
         scores = db.fetch_all(
             "session_scores",
             where="composite_score >= ?",
@@ -204,9 +204,23 @@ def _count_successful_sessions(pattern: str, report: ReflectionReport) -> int:
             order_by="created_at DESC",
             limit=100,
         )
+        if not scores:
+            return 0
+
+        # Extract category keywords from pattern for filtering
+        _CATEGORIES = ["coding", "web_research", "file_analysis", "general",
+                       "api_integration", "refactoring", "debugging",
+                       "code_generation"]
+        pattern_lower = pattern.lower()
+        matched_categories = {c for c in _CATEGORIES if c in pattern_lower}
+
+        if matched_categories:
+            filtered = [s for s in scores
+                        if s.get("task_category", "") in matched_categories]
+            return len(filtered)
+
         return len(scores)
     except Exception:
-        # Fallback: use sessions_analyzed from report as estimate
         return report.sessions_analyzed or 0
 
 

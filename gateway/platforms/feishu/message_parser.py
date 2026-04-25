@@ -24,6 +24,8 @@ from .constants import (
     _PREFERRED_LOCALES,
     _SUPPORTED_CARD_TEXT_KEYS,
     _SKIP_TEXT_KEYS,
+    _MARKDOWN_FENCE_OPEN_RE,
+    _MARKDOWN_FENCE_CLOSE_RE,
 )
 
 
@@ -127,20 +129,50 @@ def _coerce_required_int(value: Any, default: int, min_value: int = 0) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _build_markdown_post_rows(content: str) -> list[list[dict[str, str]]]:
+    """Split markdown content into rows, isolating fenced code blocks.
+
+    Feishu's post API renders each content row independently.  Keeping fenced
+    code blocks in their own rows avoids the client-side renderer from
+    misinterpreting markdown that surrounds the block.
+    """
+    lines = content.split("\n")
+    rows: list[list[dict[str, str]]] = []
+    current_lines: list[str] = []
+    in_code_block = False
+
+    for line in lines:
+        if not in_code_block and _MARKDOWN_FENCE_OPEN_RE.match(line):
+            # Start of a fenced code block — flush preceding text.
+            if current_lines:
+                rows.append([{"tag": "md", "text": "\n".join(current_lines)}])
+                current_lines = []
+            current_lines.append(line)
+            in_code_block = True
+        elif in_code_block and _MARKDOWN_FENCE_CLOSE_RE.match(line):
+            # End of fenced code block — emit as its own row.
+            current_lines.append(line)
+            rows.append([{"tag": "md", "text": "\n".join(current_lines)}])
+            current_lines = []
+            in_code_block = False
+        else:
+            current_lines.append(line)
+
+    # Flush remaining content.
+    if current_lines:
+        rows.append([{"tag": "md", "text": "\n".join(current_lines)}])
+
+    # If nothing was produced (empty input), return a single empty row.
+    if not rows:
+        rows = [[{"tag": "md", "text": content}]]
+
+    return rows
+
+
 def _build_markdown_post_payload(content: str) -> str:
+    rows = _build_markdown_post_rows(content)
     return json.dumps(
-        {
-            "zh_cn": {
-                "content": [
-                    [
-                        {
-                            "tag": "md",
-                            "text": content,
-                        }
-                    ]
-                ],
-            }
-        },
+        {"zh_cn": {"content": rows}},
         ensure_ascii=False,
     )
 

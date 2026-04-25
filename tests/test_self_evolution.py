@@ -1251,3 +1251,197 @@ class TestSecurity:
         })
         rows = _tmp_evolution_db.fetch_all("tool_invocations")
         assert len(rows) == 1
+
+
+# ============================================================================
+# 12. Dream Engine Locking
+# ============================================================================
+
+class TestDreamEngineLocking:
+    """Test that the dream engine respects file-based locking."""
+
+    def test_concurrent_run_skipped(self, _tmp_evolution_db, monkeypatch):
+        """A second run() while one is active should return None."""
+        from self_evolution.reflection_engine import DreamEngine
+        import threading
+
+        engine = DreamEngine(config={"base_url": "", "model": ""})
+        results = {"first": None, "second": None}
+
+        # We need actual session data for the first run to proceed past
+        # the "no sessions" check. Insert a score.
+        _tmp_evolution_db.insert("session_scores", {
+            "session_id": "s-lock", "composite_score": 0.7,
+            "completion_rate": 1.0, "efficiency_score": 0.5,
+            "cost_efficiency": 0.5, "satisfaction_proxy": 0.5,
+            "task_category": "general", "model": "test",
+        })
+        _tmp_evolution_db.insert("tool_invocations", {
+            "session_id": "s-lock", "tool_name": "bash",
+            "duration_ms": 100, "success": True, "turn_number": 0,
+        })
+
+        barrier = threading.Barrier(2)
+
+        def run_first():
+            # Acquire lock via _run_inner to control timing
+            from self_evolution.paths import DATA_DIR
+            import fcntl
+            lock_path = DATA_DIR / ".dream.lock"
+            lock_fd = open(lock_path, "w")
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                barrier.wait(timeout=5)  # sync: both threads ready
+                result = engine.run(hours=24)
+                results["second"] = result
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+
+        def run_second():
+            barrier.wait(timeout=5)  # sync: both threads ready
+            time.sleep(0.1)  # ensure first thread holds the lock
+            results["first"] = engine.run(hours=24)
+
+        t1 = threading.Thread(target=run_first)
+        t2 = threading.Thread(target=run_second)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        # The second call should have been skipped due to lock
+        assert results["first"] is None
+
+
+# ============================================================================
+# 13. Proposal Compensation
+# ============================================================================
+
+class TestProposalCompensation:
+    """Test that the propose job compensates for orphaned reports."""
+
+    def test_compensate_generates_proposals_for_orphaned_reports(self, _tmp_evolution_db):
+        """Reports with no proposals should get proposals generated."""
+        from self_evolution.cron_jobs import _compensate_proposals
+        import json
+
+        # Insert a report with patterns but no proposals
+        _tmp_evolution_db.insert("reflection_reports", {
+            "period_start": time.time() - 3600,
+            "period_end": time.time(),
+            "sessions_analyzed": 10,
+            "avg_score": 0.7,
+            "error_summary": "bash timeout",
+            "waste_summary": "slow tools",
+            "worst_patterns": json.dumps(["bash timeout frequently"]),
+            "best_patterns": json.dumps(["code generation works well"]),
+            "recommendations": json.dumps(["add retry logic for bash"]),
+        })
+
+        # Before compensation: no proposals
+        proposals = _tmp_evolution_db.fetch_all("evolution_proposals")
+        assert len(proposals) == 0
+
+        # Run compensation
+        _compensate_proposals()
+
+        # After: proposals should exist
+        proposals = _tmp_evolution_db.fetch_all("evolution_proposals")
+        assert len(proposals) > 0
+
+    def test_compensate_skips_reports_with_existing_proposals(self, _tmp_evolution_db):
+        """Reports that already have proposals should not be compensated."""
+        from self_evolution.cron_jobs import _compensate_proposals
+        import json
+
+        # Insert a report
+        report_id = _tmp_evolution_db.insert("reflection_reports", {
+            "period_start": time.time() - 3600,
+            "period_end": time.time(),
+            "sessions_analyzed": 5,
+            "avg_score": 0.8,
+            "error_summary": "",
+            "waste_summary": "",
+            "worst_patterns": json.dumps(["some error"]),
+            "best_patterns": json.dumps([]),
+            "recommendations": json.dumps([]),
+        })
+
+        # Insert a proposal for that report
+        _tmp_evolution_db.insert("evolution_proposals", {
+            "id": "existing-prop-1",
+            "report_id": report_id,
+            "proposal_type": "strategy",
+            "title": "Existing",
+            "description": "Already exists",
+        })
+
+        _compensate_proposals()
+
+        # Should still have only 1 proposal
+        proposals = _tmp_evolution_db.fetch_all("evolution_proposals")
+        assert len(proposals) == 1
+        assert proposals[0]["id"] == "existing-prop-1"
+
+    def test_compensate_ignores_old_reports(self, _tmp_evolution_db):
+        """Reports older than 3 days should not be compensated."""
+        from self_evolution.cron_jobs import _compensate_proposals
+        import json
+
+        # Insert a report from 5 days ago
+        old_ts = time.time() - (5 * 86400)
+        _tmp_evolution_db.insert("reflection_reports", {
+            "period_start": old_ts - 3600,
+            "period_end": old_ts,
+            "sessions_analyzed": 5,
+            "avg_score": 0.7,
+            "error_summary": "",
+            "waste_summary": "",
+            "worst_patterns": json.dumps(["old error"]),
+            "best_patterns": json.dumps([]),
+            "recommendations": json.dumps([]),
+            "created_at": old_ts,
+        })
+
+        _compensate_proposals()
+
+        proposals = _tmp_evolution_db.fetch_all("evolution_proposals")
+        assert len(proposals) == 0
+
+
+# ============================================================================
+# 14. Successful Session Count — Category Filtering
+# ============================================================================
+
+class TestSuccessfulSessionCount:
+    """Test that _count_successful_sessions filters by category keywords."""
+
+    def test_filters_by_category_in_pattern(self, _tmp_evolution_db):
+        from self_evolution.evolution_proposer import _count_successful_sessions
+        from self_evolution.models import ReflectionReport
+
+        _tmp_evolution_db.insert("session_scores", {
+            "session_id": "s-coding-1", "composite_score": 0.8,
+            "completion_rate": 1.0, "efficiency_score": 0.7,
+            "cost_efficiency": 0.9, "satisfaction_proxy": 0.8,
+            "task_category": "coding", "model": "test",
+        })
+        _tmp_evolution_db.insert("session_scores", {
+            "session_id": "s-web-1", "composite_score": 0.9,
+            "completion_rate": 1.0, "efficiency_score": 0.8,
+            "cost_efficiency": 0.8, "satisfaction_proxy": 0.9,
+            "task_category": "web_research", "model": "test",
+        })
+
+        report = ReflectionReport(
+            period_start=1000.0, period_end=2000.0, sessions_analyzed=2,
+        )
+
+        # Pattern mentions "coding" — should only count coding sessions
+        count = _count_successful_sessions("coding task pattern", report)
+        assert count == 1
+
+        # Pattern without category keywords — should count all high-score sessions
+        count = _count_successful_sessions("generic pattern", report)
+        assert count == 2
