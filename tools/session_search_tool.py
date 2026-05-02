@@ -266,7 +266,11 @@ _HIDDEN_SESSION_SOURCES = ("tool",)
 def _list_recent_sessions(db, limit: int, current_session_id: str = None) -> str:
     """Return metadata for the most recent sessions (no LLM calls)."""
     try:
-        sessions = db.list_sessions_rich(limit=limit + 5, exclude_sources=list(_HIDDEN_SESSION_SOURCES))  # fetch extra to skip current
+        sessions = db.list_sessions_rich(
+            limit=limit + 5,
+            exclude_sources=list(_HIDDEN_SESSION_SOURCES),
+            order_by_last_active=True,
+        )  # fetch extra to skip current
 
         # Resolve current session lineage to exclude it
         current_root = None
@@ -274,12 +278,13 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None) -> str
             try:
                 sid = current_session_id
                 visited = set()
+                current_root = current_session_id
                 while sid and sid not in visited:
                     visited.add(sid)
+                    current_root = sid
                     s = db.get_session(sid)
                     parent = s.get("parent_session_id") if s else None
                     sid = parent if parent else None
-                current_root = max(visited, key=len) if visited else current_session_id
             except Exception:
                 current_root = current_session_id
 

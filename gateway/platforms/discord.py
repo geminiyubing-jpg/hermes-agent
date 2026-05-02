@@ -18,7 +18,7 @@ import tempfile
 import threading
 import time
 from collections import defaultdict
-from typing import Callable, Dict, Optional, Any
+from typing import Callable, Dict, List, Optional, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,7 @@ class VoiceReceiver:
         encrypted = bytes(payload_with_nonce[:-4])
 
         try:
-            import nacl.secret  # noqa: delayed import – only in voice path
+            import nacl.secret  # noqa: E402 — delayed import, only in voice path
             box = nacl.secret.Aead(self._secret_key)
             decrypted = box.decrypt(encrypted, header, bytes(nonce))
         except Exception as e:
@@ -613,6 +613,21 @@ class DiscordAdapter(BasePlatformAdapter):
             # so LLM output or echoed user content can't ping the whole
             # server; override per DISCORD_ALLOW_MENTION_* env vars or the
             # discord.allow_mentions.* block in config.yaml.
+
+            # Close any existing client to prevent zombie websocket connections
+            # on reconnect (see #18187). Without this, the old client remains
+            # connected to Discord gateway and both fire on_message, causing
+            # double responses.
+            if self._client is not None:
+                try:
+                    if not self._client.is_closed():
+                        await self._client.close()
+                except Exception:
+                    logger.debug("[%s] Failed to close previous Discord client", self.name)
+                finally:
+                    self._client = None
+                    self._ready_event.clear()
+
             self._client = commands.Bot(
                 command_prefix="!",  # Not really used, we handle raw messages
                 intents=intents,
@@ -813,7 +828,14 @@ class DiscordAdapter(BasePlatformAdapter):
                 logger.info("[%s] Synced %d slash command(s) via bulk tree sync", self.name, len(synced))
                 return
 
-            summary = await asyncio.wait_for(self._safe_sync_slash_commands(), timeout=30)
+            # Discord's per-app command-management bucket is ~5 writes / 20 s,
+            # so a mass-prune-plus-upsert reconcile (e.g. 77 orphans + 30
+            # desired = 107 writes) takes several minutes of forced waits.
+            # A flat 30 s budget blew up reliably under bucket pressure and
+            # left slash commands broken for ~60 min until the bucket fully
+            # recovered. Use a wide ceiling; the cap still guards against a
+            # true hang. (#16713)
+            summary = await asyncio.wait_for(self._safe_sync_slash_commands(), timeout=600)
             logger.info(
                 "[%s] Safely reconciled %d slash command(s): unchanged=%d updated=%d recreated=%d created=%d deleted=%d",
                 self.name,
@@ -825,7 +847,11 @@ class DiscordAdapter(BasePlatformAdapter):
                 summary["deleted"],
             )
         except asyncio.TimeoutError:
-            logger.warning("[%s] Slash command sync timed out after 30s", self.name)
+            logger.warning(
+                "[%s] Slash command sync timed out — Discord rate-limit bucket "
+                "may be saturated; will retry on next reconnect",
+                self.name,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as e:  # pragma: no cover - defensive logging
@@ -1331,6 +1357,134 @@ class DiscordAdapter(BasePlatformAdapter):
                 )
             msg = await channel.send(content=caption if caption else None, file=file)
         return SendResult(success=True, message_id=str(msg.id))
+
+    async def send_multiple_images(
+        self,
+        chat_id: str,
+        images: List[Tuple[str, str]],
+        metadata: Optional[Dict[str, Any]] = None,
+        human_delay: float = 0.0,
+    ) -> None:
+        """Send a batch of images as a single Discord message with multiple attachments.
+
+        Discord permits up to 10 file attachments per message. Batches are
+        chunked accordingly. URL images are downloaded into memory and
+        uploaded as inline attachments (same pattern as ``send_image`` so
+        they render inline, not as bare links). Local files are opened
+        directly. On per-chunk failure the remaining images in that chunk
+        fall back to the base per-image loop.
+        """
+        if not self._client:
+            return
+        if not images:
+            return
+
+        try:
+            import discord as _discord_mod
+            import io as _io
+            from urllib.parse import unquote as _unquote
+        except Exception:  # pragma: no cover
+            await super().send_multiple_images(chat_id, images, metadata, human_delay)
+            return
+
+        try:
+            channel = self._client.get_channel(int(chat_id))
+            if not channel:
+                channel = await self._client.fetch_channel(int(chat_id))
+            if not channel:
+                logger.warning("[%s] Channel %s not found for multi-image send", self.name, chat_id)
+                return
+        except Exception as e:
+            logger.warning("[%s] Failed to resolve channel for multi-image send: %s", self.name, e)
+            await super().send_multiple_images(chat_id, images, metadata, human_delay)
+            return
+
+        CHUNK = 10
+        chunks = [images[i:i + CHUNK] for i in range(0, len(images), CHUNK)]
+
+        for chunk_idx, chunk in enumerate(chunks):
+            if human_delay > 0 and chunk_idx > 0:
+                await asyncio.sleep(human_delay)
+
+            files: List[Any] = []
+            captions: List[str] = []
+            aiohttp_session = None
+            try:
+                for image_url, alt_text in chunk:
+                    if alt_text:
+                        captions.append(alt_text)
+                    if image_url.startswith("file://"):
+                        local_path = _unquote(image_url[7:])
+                        if not os.path.exists(local_path):
+                            logger.warning("[%s] Skipping missing image: %s", self.name, local_path)
+                            continue
+                        files.append(_discord_mod.File(local_path, filename=os.path.basename(local_path)))
+                    else:
+                        if not is_safe_url(image_url):
+                            logger.warning("[%s] Blocked unsafe image URL in batch", self.name)
+                            continue
+                        # Download to BytesIO so it renders inline
+                        try:
+                            import aiohttp as _aiohttp
+                            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp
+                            _proxy = resolve_proxy_url(platform_env_var="DISCORD_PROXY")
+                            _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)
+                            if aiohttp_session is None:
+                                aiohttp_session = _aiohttp.ClientSession(**_sess_kw)
+                            async with aiohttp_session.get(
+                                image_url, timeout=_aiohttp.ClientTimeout(total=30), **_req_kw,
+                            ) as resp:
+                                if resp.status != 200:
+                                    logger.warning(
+                                        "[%s] Failed to download image (HTTP %d) in batch: %s",
+                                        self.name, resp.status, image_url[:80],
+                                    )
+                                    continue
+                                data = await resp.read()
+                                ct = resp.headers.get("content-type", "image/png")
+                                ext = "png"
+                                if "jpeg" in ct or "jpg" in ct:
+                                    ext = "jpg"
+                                elif "gif" in ct:
+                                    ext = "gif"
+                                elif "webp" in ct:
+                                    ext = "webp"
+                                files.append(_discord_mod.File(_io.BytesIO(data), filename=f"image_{len(files)}.{ext}"))
+                        except Exception as dl_err:
+                            logger.warning("[%s] Download failed for %s: %s", self.name, image_url[:80], dl_err)
+                            continue
+
+                if not files:
+                    continue
+
+                # Use the first caption if any (Discord only has one message body for the group)
+                content = captions[0] if captions else None
+                logger.info(
+                    "[%s] Sending %d image(s) as single Discord message (chunk %d/%d)",
+                    self.name, len(files), chunk_idx + 1, len(chunks),
+                )
+
+                if self._is_forum_parent(channel):
+                    await self._forum_post_file(
+                        channel,
+                        content=(content or "").strip(),
+                        files=files,
+                    )
+                else:
+                    await channel.send(content=content, files=files)
+            except Exception as e:
+                logger.warning(
+                    "[%s] Multi-image Discord send failed (chunk %d/%d), falling back to per-image: %s",
+                    self.name, chunk_idx + 1, len(chunks), e,
+                    exc_info=True,
+                )
+                await super().send_multiple_images(chat_id, chunk, metadata, human_delay=human_delay)
+            finally:
+                if aiohttp_session is not None:
+                    try:
+                        await aiohttp_session.close()
+                    except Exception:
+                        pass
 
     async def play_tts(
         self,
@@ -2259,6 +2413,10 @@ class DiscordAdapter(BasePlatformAdapter):
         async def slash_reload_mcp(interaction: discord.Interaction):
             await self._run_simple_slash(interaction, "/reload-mcp")
 
+        @tree.command(name="reload-skills", description="Re-scan ~/.hermes/skills/ for new or removed skills")
+        async def slash_reload_skills(interaction: discord.Interaction):
+            await self._run_simple_slash(interaction, "/reload-skills")
+
         @tree.command(name="voice", description="Toggle voice reply mode")
         @discord.app_commands.describe(mode="Voice mode: on, off, tts, channel, leave, or status")
         @discord.app_commands.choices(mode=[
@@ -2314,11 +2472,6 @@ class DiscordAdapter(BasePlatformAdapter):
         @discord.app_commands.describe(prompt="The prompt to run in the background")
         async def slash_background(interaction: discord.Interaction, prompt: str):
             await self._run_simple_slash(interaction, f"/background {prompt}", "Background task started~")
-
-        @tree.command(name="btw", description="Ephemeral side question using session context")
-        @discord.app_commands.describe(question="Your side question (no tools, not persisted)")
-        async def slash_btw(interaction: discord.Interaction, question: str):
-            await self._run_simple_slash(interaction, f"/btw {question}")
 
         # ── Auto-register any gateway-available commands not yet on the tree ──
         # This ensures new commands added to COMMAND_REGISTRY in
@@ -2446,39 +2599,31 @@ class DiscordAdapter(BasePlatformAdapter):
         hidden skills. The slash picker also becomes more discoverable —
         Discord live-filters by the user's typed prefix against both the
         skill name and its description.
+
+        The entries list and lookup dict are stored on ``self`` rather
+        than captured in closure variables so :meth:`refresh_skill_group`
+        can repopulate them when the user runs ``/reload-skills`` without
+        needing to touch the Discord slash-command tree or trigger a
+        ``tree.sync()`` call.
         """
         try:
-            from hermes_cli.commands import discord_skill_commands_by_category
-
             existing_names = set()
             try:
                 existing_names = {cmd.name for cmd in tree.get_commands()}
             except Exception:
                 pass
 
-            # Reuse the existing collector for consistent filtering
-            # (per-platform disabled, hub-excluded, name clamping), then
-            # flatten — the category grouping was only useful for the
-            # nested layout.
-            categories, uncategorized, hidden = discord_skill_commands_by_category(
-                reserved_names=existing_names,
-            )
-            entries: list[tuple[str, str, str]] = list(uncategorized)
-            for cat_skills in categories.values():
-                entries.extend(cat_skills)
+            # Populate the instance-level entries/lookup so the
+            # autocomplete + handler callbacks below always read the
+            # freshest state. refresh_skill_group() re-runs the same
+            # collector and mutates these two attributes in place.
+            self._skill_entries: list[tuple[str, str, str]] = []
+            self._skill_lookup: dict[str, tuple[str, str]] = {}
+            self._skill_group_reserved_names: set[str] = set(existing_names)
+            self._refresh_skill_catalog_state()
 
-            if not entries:
+            if not self._skill_entries:
                 return
-
-            # Stable alphabetical order so the autocomplete suggestion
-            # list is predictable across restarts.
-            entries.sort(key=lambda t: t[0])
-
-            # name -> (description, cmd_key) — used by both the autocomplete
-            # callback and the handler for O(1) dispatch.
-            skill_lookup: dict[str, tuple[str, str]] = {
-                n: (d, k) for n, d, k in entries
-            }
 
             async def _autocomplete_name(
                 interaction: "discord.Interaction", current: str,
@@ -2489,10 +2634,13 @@ class DiscordAdapter(BasePlatformAdapter):
                 "/skill pdf" surfaces skills whose description mentions
                 PDFs even if the name doesn't. Discord caps this list at
                 25 entries per query.
+
+                Reads ``self._skill_entries`` so a ``/reload-skills`` run
+                since process start shows up on the very next keystroke.
                 """
                 q = (current or "").strip().lower()
                 choices: list = []
-                for name, desc, _key in entries:
+                for name, desc, _key in self._skill_entries:
                     if not q or q in name.lower() or (desc and q in desc.lower()):
                         if desc:
                             label = f"{name} — {desc}"
@@ -2516,7 +2664,7 @@ class DiscordAdapter(BasePlatformAdapter):
             async def _skill_handler(
                 interaction: "discord.Interaction", name: str, args: str = "",
             ):
-                entry = skill_lookup.get(name)
+                entry = self._skill_lookup.get(name)
                 if not entry:
                     await interaction.response.send_message(
                         f"Unknown skill: `{name}`. Start typing for "
@@ -2538,15 +2686,73 @@ class DiscordAdapter(BasePlatformAdapter):
 
             logger.info(
                 "[%s] Registered /skill command with %d skill(s) via autocomplete",
-                self.name, len(entries),
+                self.name, len(self._skill_entries),
             )
-            if hidden:
+            if self._skill_group_hidden_count:
                 logger.info(
                     "[%s] %d skill(s) filtered out of /skill (name clamp / reserved)",
-                    self.name, hidden,
+                    self.name, self._skill_group_hidden_count,
                 )
         except Exception as exc:
             logger.warning("[%s] Failed to register /skill command: %s", self.name, exc)
+
+    def _refresh_skill_catalog_state(self) -> None:
+        """Re-scan disk for skills and repopulate ``self._skill_entries``.
+
+        Called once from :meth:`_register_skill_group` at startup and
+        again from :meth:`refresh_skill_group` whenever the user runs
+        ``/reload-skills``. No Discord API calls are made — autocomplete
+        and the handler both read from these instance attributes
+        directly, so an in-place mutation is sufficient.
+        """
+        from hermes_cli.commands import discord_skill_commands_by_category
+
+        reserved = getattr(self, "_skill_group_reserved_names", set())
+        categories, uncategorized, hidden = discord_skill_commands_by_category(
+            reserved_names=set(reserved),
+        )
+        entries: list[tuple[str, str, str]] = list(uncategorized)
+        for cat_skills in categories.values():
+            entries.extend(cat_skills)
+        # Stable alphabetical order so the autocomplete suggestion
+        # list is predictable across restarts.
+        entries.sort(key=lambda t: t[0])
+
+        self._skill_entries = entries
+        self._skill_lookup = {n: (d, k) for n, d, k in entries}
+        self._skill_group_hidden_count = hidden
+
+    def refresh_skill_group(self) -> tuple[int, int]:
+        """Rescan skills and update the live ``/skill`` autocomplete state.
+
+        Invoked by :meth:`gateway.run.GatewayOrchestrator._handle_reload_skills_command`
+        after :func:`agent.skill_commands.reload_skills` has refreshed
+        the in-process skill-command registry. Without this call, the
+        ``/skill`` autocomplete dropdown keeps showing the list captured
+        at process start — new skills stay invisible and deleted skills
+        return an "Unknown skill" error when clicked.
+
+        Because autocomplete options are fetched dynamically by Discord,
+        we only need to mutate the entries/lookup attributes read by the
+        callbacks — no ``tree.sync()`` is required.
+
+        Returns ``(new_count, hidden_count)``.
+        """
+        try:
+            self._refresh_skill_catalog_state()
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to refresh /skill autocomplete after reload: %s",
+                self.name, exc,
+            )
+            return (len(getattr(self, "_skill_entries", [])), 0)
+        logger.info(
+            "[%s] Refreshed /skill autocomplete: %d skill(s) available (%d filtered)",
+            self.name,
+            len(self._skill_entries),
+            self._skill_group_hidden_count,
+        )
+        return (len(self._skill_entries), self._skill_group_hidden_count)
 
     def _build_slash_event(self, interaction: discord.Interaction, text: str) -> MessageEvent:
         """Build a MessageEvent from a Discord slash command interaction."""
@@ -2684,21 +2890,8 @@ class DiscordAdapter(BasePlatformAdapter):
                 skills: ["skill-a", "skill-b"]
         Also checks parent_id so forum threads inherit the forum's bindings.
         """
-        bindings = self.config.extra.get("channel_skill_bindings", [])
-        if not bindings:
-            return None
-        ids_to_check = {channel_id}
-        if parent_id:
-            ids_to_check.add(parent_id)
-        for entry in bindings:
-            entry_id = str(entry.get("id", ""))
-            if entry_id in ids_to_check:
-                skills = entry.get("skills") or entry.get("skill")
-                if isinstance(skills, str):
-                    return [skills]
-                if isinstance(skills, list) and skills:
-                    return list(dict.fromkeys(skills))  # dedup, preserve order
-        return None
+        from gateway.platforms.base import resolve_channel_skills
+        return resolve_channel_skills(self.config.extra, channel_id, parent_id)
 
     def _resolve_channel_prompt(self, channel_id: str, parent_id: str | None = None) -> str | None:
         """Resolve a Discord per-channel prompt, preferring the exact channel over its parent."""
@@ -2726,8 +2919,15 @@ class DiscordAdapter(BasePlatformAdapter):
             raw = os.getenv("DISCORD_FREE_RESPONSE_CHANNELS", "")
         if isinstance(raw, list):
             return {str(part).strip() for part in raw if str(part).strip()}
-        if isinstance(raw, str) and raw.strip():
-            return {part.strip() for part in raw.split(",") if part.strip()}
+        # Coerce non-list scalars (str/int/float) to str before splitting.
+        # YAML parses a bare numeric value such as
+        # `free_response_channels: 1491973769726791812` as int, which was
+        # previously falling through the isinstance(str) branch and silently
+        # returning an empty set.  str() here accepts whatever scalar the YAML
+        # loader hands us without changing existing string/CSV semantics.
+        s = str(raw).strip() if raw is not None else ""
+        if s:
+            return {part.strip() for part in s.split(",") if part.strip()}
         return set()
 
     def _thread_parent_channel(self, channel: Any) -> Any:
@@ -2913,9 +3113,47 @@ class DiscordAdapter(BasePlatformAdapter):
         except Exception as e:
             return SendResult(success=False, error=str(e))
 
+    async def send_slash_confirm(
+        self, chat_id: str, title: str, message: str, session_key: str,
+        confirm_id: str, metadata: Optional[dict] = None,
+    ) -> SendResult:
+        """Send a three-button slash-command confirmation prompt."""
+        if not self._client or not DISCORD_AVAILABLE:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            target_id = chat_id
+            if metadata and metadata.get("thread_id"):
+                target_id = metadata["thread_id"]
+
+            channel = self._client.get_channel(int(target_id))
+            if not channel:
+                channel = await self._client.fetch_channel(int(target_id))
+
+            # Embed description limit is 4096; message usually fits easily.
+            max_desc = 4088
+            body = message if len(message) <= max_desc else message[: max_desc - 3] + "..."
+            embed = discord.Embed(
+                title=title or "Confirm",
+                description=body,
+                color=discord.Color.orange(),
+            )
+
+            view = SlashConfirmView(
+                session_key=session_key,
+                confirm_id=confirm_id,
+                allowed_user_ids=self._allowed_user_ids,
+            )
+
+            msg = await channel.send(embed=embed, view=view)
+            return SendResult(success=True, message_id=str(msg.id))
+        except Exception as e:
+            return SendResult(success=False, error=str(e))
+
     async def send_update_prompt(
         self, chat_id: str, prompt: str, default: str = "",
         session_key: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         """Send an interactive button-based update prompt (Yes / No).
 
@@ -2925,9 +3163,10 @@ class DiscordAdapter(BasePlatformAdapter):
         if not self._client or not DISCORD_AVAILABLE:
             return SendResult(success=False, error="Not connected")
         try:
-            channel = self._client.get_channel(int(chat_id))
+            target_id = metadata.get("thread_id") if metadata and metadata.get("thread_id") else chat_id
+            channel = self._client.get_channel(int(target_id))
             if not channel:
-                channel = await self._client.fetch_channel(int(chat_id))
+                channel = await self._client.fetch_channel(int(target_id))
 
             default_hint = f" (default: {default})" if default else ""
             embed = discord.Embed(
@@ -3261,6 +3500,7 @@ class DiscordAdapter(BasePlatformAdapter):
             if auto_thread and not skip_thread and not is_voice_linked_channel and not is_reply_message:
                 thread = await self._auto_create_thread(message)
                 if thread:
+                    parent_channel_id = str(message.channel.id)
                     is_thread = True
                     thread_id = str(thread.id)
                     auto_threaded_channel = thread
@@ -3311,6 +3551,7 @@ class DiscordAdapter(BasePlatformAdapter):
         chat_topic = self._get_effective_topic(message.channel, is_thread=is_thread)
 
         # Build source
+        guild = getattr(message, "guild", None)
         source = self.build_source(
             chat_id=str(effective_channel.id),
             chat_name=chat_name,
@@ -3320,6 +3561,9 @@ class DiscordAdapter(BasePlatformAdapter):
             thread_id=thread_id,
             chat_topic=chat_topic,
             is_bot=getattr(message.author, "bot", False),
+            guild_id=str(guild.id) if guild else None,
+            parent_chat_id=parent_channel_id,
+            message_id=str(message.id),
         )
 
         # Build media URLs -- download image attachments to local cache so the
@@ -3637,6 +3881,103 @@ if DISCORD_AVAILABLE:
 
         async def on_timeout(self):
             """Handle view timeout -- disable buttons and mark as expired."""
+            self.resolved = True
+            for child in self.children:
+                child.disabled = True
+
+    class SlashConfirmView(discord.ui.View):
+        """Three-button view for generic slash-command confirmations.
+
+        Used by ``/reload-mcp`` and any future slash command routed through
+        ``GatewayRunner._request_slash_confirm``.  Buttons map to the
+        gateway's three choices:
+
+          * "Approve Once"   → ``choice="once"``
+          * "Always Approve" → ``choice="always"``
+          * "Cancel"         → ``choice="cancel"``
+
+        Clicking calls the module-level
+        ``tools.slash_confirm.resolve(session_key, confirm_id, choice)``
+        which runs the handler the runner stored for this ``session_key``.
+        Only users in the adapter's allowlist can click.  Times out after
+        5 minutes (matches the gateway primitive's timeout).
+        """
+
+        def __init__(self, session_key: str, confirm_id: str, allowed_user_ids: set):
+            super().__init__(timeout=300)
+            self.session_key = session_key
+            self.confirm_id = confirm_id
+            self.allowed_user_ids = allowed_user_ids
+            self.resolved = False
+
+        def _check_auth(self, interaction: discord.Interaction) -> bool:
+            if not self.allowed_user_ids:
+                return True
+            return str(interaction.user.id) in self.allowed_user_ids
+
+        async def _resolve(
+            self, interaction: discord.Interaction, choice: str,
+            color: discord.Color, label: str,
+        ):
+            if self.resolved:
+                await interaction.response.send_message(
+                    "This prompt has already been resolved~", ephemeral=True,
+                )
+                return
+            if not self._check_auth(interaction):
+                await interaction.response.send_message(
+                    "You're not authorized to answer this prompt~", ephemeral=True,
+                )
+                return
+
+            self.resolved = True
+
+            embed = interaction.message.embeds[0] if interaction.message.embeds else None
+            if embed:
+                embed.color = color
+                embed.set_footer(text=f"{label} by {interaction.user.display_name}")
+
+            for child in self.children:
+                child.disabled = True
+
+            await interaction.response.edit_message(embed=embed, view=self)
+
+            # Resolve via the module-level primitive.  If the handler
+            # returns a follow-up message, post it in the same channel.
+            try:
+                from tools import slash_confirm as _slash_confirm_mod
+                result_text = await _slash_confirm_mod.resolve(
+                    self.session_key, self.confirm_id, choice,
+                )
+                if result_text:
+                    await interaction.followup.send(result_text)
+                logger.info(
+                    "Discord button resolved slash-confirm for session %s "
+                    "(choice=%s, user=%s)",
+                    self.session_key, choice, interaction.user.display_name,
+                )
+            except Exception as exc:
+                logger.error("Discord slash-confirm resolve failed: %s", exc, exc_info=True)
+
+        @discord.ui.button(label="Approve Once", style=discord.ButtonStyle.green)
+        async def approve_once(
+            self, interaction: discord.Interaction, button: discord.ui.Button,
+        ):
+            await self._resolve(interaction, "once", discord.Color.green(), "Approved once")
+
+        @discord.ui.button(label="Always Approve", style=discord.ButtonStyle.blurple)
+        async def approve_always(
+            self, interaction: discord.Interaction, button: discord.ui.Button,
+        ):
+            await self._resolve(interaction, "always", discord.Color.purple(), "Always approved")
+
+        @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+        async def cancel(
+            self, interaction: discord.Interaction, button: discord.ui.Button,
+        ):
+            await self._resolve(interaction, "cancel", discord.Color.greyple(), "Cancelled")
+
+        async def on_timeout(self):
             self.resolved = True
             for child in self.children:
                 child.disabled = True
