@@ -68,7 +68,11 @@ SUPPORTED_POOL_STRATEGIES = {
 }
 
 # Cooldown before retrying an exhausted credential.
+# Transient 401 auth failures cool down briefly so single-key setups can recover.
+# 429 (rate-limited), 402 (billing/quota), and other failures cool down after 1 hour.
+# Server-side overload sub-codes (e.g. 1305/1306/1307) recover faster (3 min).
 # Provider-supplied reset_at timestamps override these defaults.
+EXHAUSTED_TTL_401_SECONDS = 5 * 60           # 5 minutes
 EXHAUSTED_TTL_429_SECONDS = 60 * 60          # 1 hour
 EXHAUSTED_TTL_DEFAULT_SECONDS = 60 * 60      # 1 hour
 
@@ -202,6 +206,8 @@ def _exhausted_ttl(error_code: Optional[int], error_reason: Optional[str] = None
       - 1305/1306/1307/500: server-side overload → 3 min (recovers quickly)
       - 1302 or plain 429:  user quota/rate-limit → 1 hour
     """
+    if error_code == 401:
+        return EXHAUSTED_TTL_401_SECONDS
     if error_reason and str(error_reason) in _SERVER_OVERLOAD_CODES:
         return EXHAUSTED_TTL_SERVER_OVERLOAD_SECONDS
     if error_code == 429:
@@ -319,14 +325,29 @@ def _iter_custom_providers(config: Optional[dict] = None):
         yield _normalize_custom_pool_name(name), entry
 
 
-def get_custom_provider_pool_key(base_url: str) -> Optional[str]:
+def get_custom_provider_pool_key(base_url: str, provider_name: Optional[str] = None) -> Optional[str]:
     """Look up the custom_providers list in config.yaml and return 'custom:<name>' for a matching base_url.
+
+    When provider_name is given, prefer matching by name first (solving the case where
+    multiple custom providers share the same base_url but have different API keys).
+    Falls back to base_url matching when no name match is found.
 
     Returns None if no match is found.
     """
     if not base_url:
         return None
     normalized_url = base_url.strip().rstrip("/")
+
+    # When a provider name is given, try to match by name first.
+    # This fixes the P1 bug where two custom providers sharing the same
+    # base_url always resolve to the first one's credentials.
+    if provider_name:
+        normalized_name = _normalize_custom_pool_name(provider_name)
+        for norm_name, entry in _iter_custom_providers():
+            if norm_name == normalized_name:
+                return f"{CUSTOM_POOL_PREFIX}{norm_name}"
+
+    # Fall back to base_url matching (original behavior)
     for norm_name, entry in _iter_custom_providers():
         entry_url = str(entry.get("base_url") or "").strip().rstrip("/")
         if entry_url and entry_url == normalized_url:
