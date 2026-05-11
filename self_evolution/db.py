@@ -290,7 +290,15 @@ def cleanup(days: int = 30):
     """Remove data older than N days."""
     cutoff = time.time() - (days * 86400)
     conn = get_connection()
-    for table in ["tool_invocations", "outcome_signals"]:
+    for table in [
+        "tool_invocations", "outcome_signals", "session_scores",
+        "reflection_reports", "improvement_units",
+    ]:
         conn.execute(f"DELETE FROM {table} WHERE created_at < ?", (cutoff,))
+    # Clear old proposals that are no longer pending
+    conn.execute(
+        "DELETE FROM evolution_proposals WHERE created_at < ? AND status != 'pending_approval'",
+        (cutoff,),
+    )
     conn.commit()
     logger.info("Cleaned up data older than %d days", days)

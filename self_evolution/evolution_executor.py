@@ -25,7 +25,7 @@ from self_evolution.models import Proposal, ImprovementUnit
 logger = logging.getLogger(__name__)
 
 from self_evolution.paths import DATA_DIR as STRATEGIES_DIR, STRATEGIES_FILE, ARCHIVE_DIR
-from self_evolution.paths import SKILLS_DIR, MEMORIES_DIR
+from self_evolution.paths import DATA_DIR, SKILLS_DIR, MEMORIES_DIR
 
 
 class EvolutionExecutor:
@@ -281,6 +281,16 @@ class EvolutionExecutor:
             old = store.load_archive(unit.version - 1)
             if old:
                 store.save(old)
+            else:
+                logger.warning("Archive v%d not found for unit %s, marking as revert_failed",
+                               unit.version - 1, unit.id)
+                db.update(
+                    "improvement_units",
+                    {"status": "revert_failed", "resolved_at": time.time()},
+                    where="id = ?",
+                    where_params=(unit.id,),
+                )
+                return
 
         db.update(
             "improvement_units",

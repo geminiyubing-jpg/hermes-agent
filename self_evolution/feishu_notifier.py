@@ -446,23 +446,6 @@ class FeishuNotifier:
         if resp.status_code != 200:
             logger.warning("Feishu REST send failed: %s", resp.text)
 
-    def _send_confirmation(self, proposal_id: str, message: str):
-        """Send a simple confirmation message."""
-        if not self.enabled:
-            return
-        card = {
-            "elements": [
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": f"**提案 `{proposal_id}`**: {message}",
-                    },
-                },
-            ],
-        }
-        self._send_card(card)
-
     def _get_tenant_token(self) -> Optional[str]:
         """Get Feishu tenant access token with caching (1.5h TTL)."""
         if self._token_cache is not None:

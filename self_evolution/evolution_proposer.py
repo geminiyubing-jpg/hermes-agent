@@ -98,25 +98,6 @@ def _pattern_to_code_improvement(
     )
 
 
-def _error_to_proposal(
-    pattern: str, report: ReflectionReport, report_id: int, index: int
-) -> Proposal:
-    """Convert an error pattern into a compact strategy proposal (fallback)."""
-    # Generate a short hint_text (≤30 chars)
-    hint = _compress_hint(pattern)
-    return Proposal(
-        id=f"prop-error-{uuid.uuid4().hex[:8]}",
-        report_id=report_id,
-        proposal_type="strategy",
-        title=f"规避模式: {pattern[:50]}",
-        description=f"基于错误分析发现的问题模式: {pattern}\n\n"
-                    f"建议创建策略规则来规避此类问题。",
-        expected_impact="减少同类错误发生率",
-        risk_assessment="low",
-        rollback_plan="删除策略规则即可恢复",
-        status="pending_approval",
-    )
-
 
 def _success_to_proposal(
     pattern: str, report: ReflectionReport, report_id: int, index: int

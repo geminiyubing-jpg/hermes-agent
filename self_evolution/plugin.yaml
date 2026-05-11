@@ -5,3 +5,4 @@ provides_hooks:
   - post_tool_call
   - on_session_end
   - pre_llm_call
+  - pre_tool_call

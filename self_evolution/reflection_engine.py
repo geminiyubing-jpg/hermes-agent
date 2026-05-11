@@ -405,6 +405,8 @@ class DreamEngine:
         data = {}
 
         # 1. Sessions — compact: [score, completion, efficiency, cost, satisfaction, category]
+        # Cap at 50 to avoid exceeding model context window
+        sampled_scores = scores[:50] if len(scores) > 50 else scores
         data["sessions"] = [
             [
                 round(s.get("composite_score", 0), 2),
@@ -414,7 +416,7 @@ class DreamEngine:
                 round(s.get("satisfaction_proxy", 0), 2),
                 s.get("task_category", ""),
             ]
-            for s in scores
+            for s in sampled_scores
         ]
 
         # 2. Tool usage — compact: {tool: [calls, failures, avg_ms]}

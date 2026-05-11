@@ -81,16 +81,14 @@ def inject_hints(kwargs: dict) -> Optional[str]:
     # Build context from current session
     context = _build_context(kwargs)
 
-    # Match strategies
-    matched = _engine.match_strategies(strategies, context)
+    # Match strategies (skip unconditional — nothing to filter on)
+    matched = _engine.match_strategies(strategies, context, require_conditions=True)
     if not matched:
         return None
 
-    # Filter: require conditions and enforce hint length
+    # Filter: enforce hint length
     eligible = []
     for s in matched:
-        if not s.conditions:
-            continue  # Skip unconditioned strategies
         if len(s.hint_text.strip()) > _MAX_SINGLE_HINT:
             continue  # Skip overly long hints
         eligible.append(s)

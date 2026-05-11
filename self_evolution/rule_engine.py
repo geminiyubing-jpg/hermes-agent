@@ -33,13 +33,23 @@ class StrategyRuleEngine:
         self,
         strategies: List[StrategyRule],
         context: Dict[str, Any],
+        *,
+        require_conditions: bool = False,
     ) -> List[StrategyRule]:
-        """Return strategies whose conditions match the context."""
+        """Return strategies whose conditions match the context.
+
+        Args:
+            require_conditions: If True, skip strategies with no conditions.
+                Use True for injection scenarios where unconditional rules
+                are meaningless (nothing to filter on).
+        """
         matched = []
         for strategy in strategies:
             if not strategy.enabled:
                 continue
             if not strategy.conditions:
+                if require_conditions:
+                    continue
                 # No conditions = always match
                 matched.append(strategy)
                 continue
