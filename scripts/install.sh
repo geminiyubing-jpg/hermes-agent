@@ -69,7 +69,10 @@ DETECTED_BROWSER_EXECUTABLE=""
 # Options
 USE_VENV=true
 RUN_SETUP=true
+SKIP_BROWSER=false
 BRANCH="main"
+ENSURE_DEPS=""
+POSTINSTALL_MODE=false
 
 # Detect non-interactive mode (e.g. curl | bash)
 # When stdin is not a terminal, read -p will fail with EOF,
@@ -91,6 +94,10 @@ while [[ $# -gt 0 ]]; do
             RUN_SETUP=false
             shift
             ;;
+        --skip-browser|--no-playwright)
+            SKIP_BROWSER=true
+            shift
+            ;;
         --branch)
             BRANCH="$2"
             shift 2
@@ -104,6 +111,14 @@ while [[ $# -gt 0 ]]; do
             HERMES_HOME="$2"
             shift 2
             ;;
+        --ensure)
+            ENSURE_DEPS="$2"
+            shift 2
+            ;;
+        --postinstall)
+            POSTINSTALL_MODE=true
+            shift
+            ;;
         -h|--help)
             echo "Hermes Agent Installer"
             echo ""
@@ -112,6 +127,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --no-venv      Don't create virtual environment"
             echo "  --skip-setup   Skip interactive setup wizard"
+            echo "  --skip-browser Skip Playwright/Chromium install (browser tools won't work)"
             echo "  --branch NAME  Git branch to install (default: main)"
             echo "  --dir PATH     Installation directory"
             echo "                   default (non-root):  ~/.hermes/hermes-agent"
@@ -127,6 +143,12 @@ while [[ $# -gt 0 ]]; do
             echo "  (default /root/.hermes).  This keeps Docker bind-mounted volumes"
             echo "  small and ensures the command is on PATH for all shells."
             echo "  Existing installs at \$HERMES_HOME/hermes-agent are preserved in-place."
+            echo "  --ensure DEPS  Install only specified deps (comma-separated)"
+            echo "                   Supported: node, browser, ripgrep, ffmpeg"
+            echo "                   Does NOT clone repo or create venv"
+            echo "  --postinstall  Run post-install setup only (for pip users)"
+            echo "                   Installs optional deps + runs hermes setup"
+            echo "                   Does NOT clone repo or create venv"
             exit 0
             ;;
         *)
@@ -315,7 +337,7 @@ detect_os() {
             OS="windows"
             DISTRO="windows"
             log_error "Windows detected. Please use the PowerShell installer:"
-            log_info "  irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex"
+            log_info "  iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)"
             exit 1
             ;;
         *)
@@ -1045,11 +1067,6 @@ install_deps() {
         log_info "Termux note: matrix e2ee and local faster-whisper extras are excluded from .[termux-all] due to upstream Android wheel/toolchain blockers."
         log_info "Termux note: browser/WhatsApp tooling is not installed by default; see the Termux guide for optional follow-up steps."
 
-        if [ -d "tinker-atropos" ] && [ -f "tinker-atropos/pyproject.toml" ]; then
-            log_info "tinker-atropos submodule found — skipping install (optional, for RL training)"
-            log_info "  To install later: $PIP_PYTHON -m pip install -e \"./tinker-atropos\""
-        fi
-
         log_success "All dependencies installed"
         return 0
     fi
@@ -1237,13 +1254,6 @@ PY
 
     log_success "Main package installed"
 
-    # tinker-atropos (RL training) is optional — skip by default.
-    # To enable RL tools: git submodule update --init tinker-atropos && uv pip install -e "./tinker-atropos"
-    if [ -d "tinker-atropos" ] && [ -f "tinker-atropos/pyproject.toml" ]; then
-        log_info "tinker-atropos submodule found — skipping install (optional, for RL training)"
-        log_info "  To install: $UV_CMD pip install -e \"./tinker-atropos\""
-    fi
-
     log_success "All dependencies installed"
 }
 
@@ -1281,6 +1291,10 @@ setup_path() {
     # We intentionally clear PYTHONPATH/PYTHONHOME here so inherited env vars
     # can't make this launcher import modules from another checkout.
     mkdir -p "$command_link_dir"
+    # Older installs created this path as a symlink to $HERMES_BIN. Without
+    # the rm, `cat >` follows the symlink and overwrites the venv pip entry
+    # point with this shim — making `exec "$HERMES_BIN"` self-recurse. (#21454)
+    rm -f "$command_link_dir/hermes"
     cat > "$command_link_dir/hermes" <<EOF
 #!/usr/bin/env bash
 unset PYTHONPATH
@@ -1422,6 +1436,10 @@ copy_config_templates() {
     else
         log_info "~/.hermes/.env already exists, keeping it"
     fi
+    # Restrict .env permissions — this file holds API keys and tokens.
+    # 0600 ensures only the file owner can read/write, matching standard
+    # practice for credential files (.netrc, .aws/credentials, .ssh/config).
+    chmod 600 "$HERMES_HOME/.env"
     configure_browser_env_from_system_browser
 
     # Create config.yaml at ~/.hermes/config.yaml (top level, easy to find)
@@ -1494,6 +1512,17 @@ find_system_browser() {
         fi
     done
 
+    if [ "$(uname)" = "Darwin" ]; then
+        for app in \
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+            "/Applications/Chromium.app/Contents/MacOS/Chromium"; do
+            if [ -x "$app" ]; then
+                echo "$app"
+                return 0
+            fi
+        done
+    fi
+
     return 1
 }
 
@@ -1516,8 +1545,13 @@ configure_browser_env_from_system_browser() {
         browser_path="$(find_system_browser 2>/dev/null || true)"
     fi
 
-    if [ -z "$browser_path" ] || [ ! -f "$env_file" ]; then
+    if [ -z "$browser_path" ]; then
         return 0
+    fi
+
+    mkdir -p "$HERMES_HOME"
+    if [ ! -f "$env_file" ]; then
+        touch "$env_file"
     fi
 
     if grep -q '^AGENT_BROWSER_EXECUTABLE_PATH=' "$env_file" 2>/dev/null; then
@@ -1558,6 +1592,13 @@ install_node_deps() {
         # Playwright's --with-deps only supports apt-based systems natively.
         # For Arch/Manjaro we install the system libs via pacman first.
         # Other systems must install Chromium dependencies manually.
+        if [ "$SKIP_BROWSER" = true ]; then
+            log_info "Skipping Playwright/Chromium install (--skip-browser)"
+            log_info "Browser tools will be unavailable until you run manually:"
+            log_info "  cd $INSTALL_DIR && npx playwright install chromium"
+            log_info "On apt-based systems, an admin also needs to run:"
+            log_info "  sudo npx playwright install-deps chromium"
+        else
         log_info "Installing browser engine (Playwright Chromium)..."
         DETECTED_BROWSER_EXECUTABLE="$(find_system_browser 2>/dev/null || true)"
         if [ -n "$DETECTED_BROWSER_EXECUTABLE" ]; then
@@ -1566,12 +1607,30 @@ install_node_deps() {
         else
             case "$DISTRO" in
                 ubuntu|debian|raspbian|pop|linuxmint|elementary|zorin|kali|parrot)
-                    log_info "Playwright may request sudo to install browser system dependencies (shared libraries)."
-                    log_info "This is standard Playwright setup — Hermes itself does not require root access."
-                    cd "$INSTALL_DIR" && run_browser_install_with_timeout 600 npx playwright install --with-deps chromium 2>/dev/null || {
-                        log_warn "Playwright browser installation failed — browser tools will not work."
-                        log_warn "Try running manually: cd $INSTALL_DIR && npx playwright install --with-deps chromium"
-                    }
+                    # Use --with-deps only when sudo is available non-interactively
+                    # (root, or a user with passwordless sudo). Non-sudo users
+                    # — typical for systemd service accounts and unprivileged
+                    # operator users — would otherwise get blocked on an
+                    # interactive sudo prompt that they can't satisfy. Fall back
+                    # to the browser-only install in that case, and print the
+                    # exact command the admin needs to run separately.
+                    if [ "$(id -u)" -eq 0 ] || (command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null); then
+                        log_info "Installing Playwright Chromium with system dependencies..."
+                        cd "$INSTALL_DIR" && run_browser_install_with_timeout 600 npx playwright install --with-deps chromium 2>/dev/null || {
+                            log_warn "Playwright browser installation failed — browser tools will not work."
+                            log_warn "Try running manually: cd $INSTALL_DIR && npx playwright install --with-deps chromium"
+                        }
+                    else
+                        log_warn "No sudo available — skipping system-library install (--with-deps)."
+                        log_info "Ask an administrator to run, one time, as root:"
+                        log_info "  sudo npx playwright install-deps chromium"
+                        log_info "  (from $INSTALL_DIR, after Node.js deps are installed)"
+                        log_info "Installing Chromium binary into this user's Playwright cache..."
+                        cd "$INSTALL_DIR" && run_browser_install_with_timeout 600 npx playwright install chromium 2>/dev/null || {
+                            log_warn "Playwright browser installation failed — browser tools will not work."
+                            log_warn "Try running manually: cd $INSTALL_DIR && npx playwright install chromium"
+                        }
+                    fi
                     ;;
                 arch|manjaro|cachyos|endeavouros|garuda)
                     if command -v pacman &> /dev/null; then
@@ -1615,6 +1674,7 @@ install_node_deps() {
                     cd "$INSTALL_DIR" && run_browser_install_with_timeout 600 npx playwright install chromium 2>/dev/null || true
                     ;;
             esac
+        fi
         fi
         log_success "Browser engine setup complete"
     fi
@@ -1844,6 +1904,134 @@ print_success() {
     fi
 }
 
+ensure_browser() {
+    if ! command -v node >/dev/null 2>&1; then
+        local node_bin="$HERMES_HOME/node/bin/node"
+        if [ -x "$node_bin" ]; then
+            export PATH="$HERMES_HOME/node/bin:$PATH"
+        else
+            log_error "Node.js not found. Run with --ensure node first."
+            return 1
+        fi
+    fi
+
+    local npm_bin
+    npm_bin="$(command -v npm 2>/dev/null || echo "$HERMES_HOME/node/bin/npm")"
+    if [ ! -x "$npm_bin" ]; then
+        log_error "npm not found"
+        return 1
+    fi
+
+    log_info "Installing agent-browser..."
+    local log_file
+    log_file="$(mktemp)"
+    if ! "$npm_bin" install -g --prefix "$HERMES_HOME/node" --silent --ignore-scripts \
+        "agent-browser@^0.26.0" \
+        "@askjo/camofox-browser@^1.5.2" \
+        >"$log_file" 2>&1; then
+        log_error "npm install failed:"
+        cat "$log_file" >&2
+        rm -f "$log_file"
+        return 1
+    fi
+    rm -f "$log_file"
+    export PATH="$HERMES_HOME/node/bin:$PATH"
+
+    local sys_browser
+    sys_browser="$(find_system_browser 2>/dev/null || true)"
+    if [ -n "$sys_browser" ]; then
+        configure_browser_env_from_system_browser "$sys_browser"
+        log_info "System browser detected -- skipping Chromium download"
+        return 0
+    fi
+
+    log_info "Installing Chromium via agent-browser install..."
+    local ab_bin="$HERMES_HOME/node/bin/agent-browser"
+    if [ -x "$ab_bin" ]; then
+        "$ab_bin" install 2>/dev/null || {
+            log_warn "Chromium install failed. Browser tools may not work without a system browser."
+
+            # OS-specific hints (detect_os sets $DISTRO)
+            case "${DISTRO:-unknown}" in
+                ubuntu|debian)
+                    log_info "Try: sudo apt-get install -y chromium-browser"
+                    ;;
+                arch)
+                    log_info "Try: sudo pacman -S chromium"
+                    ;;
+                fedora|rhel|centos)
+                    log_info "Try: sudo dnf install -y chromium"
+                    ;;
+            esac
+        }
+    else
+        log_warn "agent-browser not found at $ab_bin"
+    fi
+
+    return 0
+}
+
+ensure_mode() {
+    detect_os
+
+    IFS=',' read -ra DEPS <<< "$ENSURE_DEPS"
+    for dep in "${DEPS[@]}"; do
+        dep="$(echo "$dep" | tr -d '[:space:]')"
+        case "$dep" in
+            node)
+                check_node
+                ;;
+            browser)
+                check_node
+                if [ "$HAS_NODE" = true ]; then
+                    ensure_browser
+                fi
+                ;;
+            ripgrep)
+                if ! command -v rg &>/dev/null; then
+                    HAS_RIPGREP=false
+                    HAS_FFMPEG=true
+                    install_system_packages
+                fi
+                ;;
+            ffmpeg)
+                if ! command -v ffmpeg &>/dev/null; then
+                    HAS_FFMPEG=false
+                    HAS_RIPGREP=true
+                    install_system_packages
+                fi
+                ;;
+            *)
+                log_warn "Unknown dependency: $dep"
+                ;;
+        esac
+    done
+}
+
+postinstall_mode() {
+    print_banner
+    detect_os
+
+    log_info "Post-install mode: setting up Hermes for pip install"
+
+    check_node
+    check_network_prerequisites
+    install_system_packages
+
+    if [ "$HAS_NODE" = true ] && [ "$SKIP_BROWSER" = false ]; then
+        ensure_browser
+    fi
+
+    HERMES_CMD="$(command -v hermes 2>/dev/null || echo "")"
+    if [ -n "$HERMES_CMD" ]; then
+        log_info "Running hermes setup..."
+        "$HERMES_CMD" setup
+    else
+        log_warn "hermes command not found on PATH"
+        log_info "Try: python -m hermes_cli.main setup"
+    fi
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -1870,6 +2058,14 @@ main() {
     maybe_start_gateway
 
     print_success
+
+    echo "git" > "$HERMES_HOME/.install_method"
 }
 
-main
+if [ -n "$ENSURE_DEPS" ]; then
+    ensure_mode
+elif [ "$POSTINSTALL_MODE" = true ]; then
+    postinstall_mode
+else
+    main
+fi
