@@ -44,11 +44,13 @@ const AUX_TASKS: readonly { key: string; label: string; hint: string }[] = [
   { key: "vision", label: "Vision", hint: "Image analysis" },
   { key: "web_extract", label: "Web Extract", hint: "Page summarization" },
   { key: "compression", label: "Compression", hint: "Context compaction" },
-  { key: "session_search", label: "Session Search", hint: "Recall queries" },
   { key: "skills_hub", label: "Skills Hub", hint: "Skill search" },
   { key: "approval", label: "Approval", hint: "Smart auto-approve" },
   { key: "mcp", label: "MCP", hint: "MCP tool routing" },
   { key: "title_generation", label: "Title Gen", hint: "Session titles" },
+  { key: "triage_specifier", label: "Triage Specifier", hint: "Kanban spec fleshing" },
+  { key: "kanban_decomposer", label: "Kanban Decomposer", hint: "Task decomposition" },
+  { key: "profile_describer", label: "Profile Describer", hint: "Auto profile descriptions" },
   { key: "curator", label: "Curator", hint: "Skill-usage review" },
 ] as const;
 
@@ -827,7 +829,7 @@ export default function ModelsPage() {
       </span>,
     );
     setEnd(
-      <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:gap-2">
+      <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end sm:gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           {PERIODS.map((p) => (
             <Button
