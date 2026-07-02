@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#5FA8D3"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF">💧 布莱埃斯湖 + 三峰山 + 米苏里纳湖 → 威尼斯 · 8/5</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#F0F4F8">Day 12 · 水与石的对话</text>
+
+  <!-- Drone badge -->
+  <rect x="40" y="88" width="380" height="24" rx="4" fill="#F8D7DA"/>
+  <text x="55" y="105" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">🚁 全程: ❌ 禁飞 · 三峰自然公园+布莱埃斯自然公园全面禁止无人机</text>
+
+  <!-- ========= LAGO DI BRAIES ========= -->
+  <rect x="40" y="122" width="590" height="290" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="122" width="590" height="42" rx="12" fill="#5FA8D3"/>
+  <rect x="40" y="145" width="590" height="18" fill="#5FA8D3"/>
+  <text x="55" y="147" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">💎 布莱埃斯湖 Lago di Braies (翡翠湖)</text>
+
+  <rect x="55" y="175" width="560" height="36" rx="6" fill="#48BB78"/>
+  <text x="70" y="197" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">🚗 导航: Lago di Braies · 从Ortisei约1.5h车程</text>
+
+  <!-- Parking -->
+  <rect x="55" y="218" width="560" height="58" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="70" y="240" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#E8983F">🅿️ 停车: Lago di Braies 大型停车场 (P1/P2)</text>
+  <text x="70" y="258" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">GPS: 46.6940°N, 12.0930°E · 旺季€5-8/天 · 早起抢位</text>
+  <text x="70" y="272" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">💡 必须赶在大巴到达前到！8:00前最佳</text>
+
+  <text x="55" y="295" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🛶 划船体验</text>
+  <text x="55" y="315" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">提前预订木船 · 划到湖心最安静的地方听船桨声</text>
+  <text x="55" y="335" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">湖水翡翠色 · 雪山倒影 · 早晨雾气最梦幻</text>
+
+  <rect x="55" y="348" width="560" height="28" rx="6" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <text x="70" y="367" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">💡 早晨最安静 · 别人到了只能排队等船 · 我们提前订好</text>
+
+  <!-- Drone -->
+  <rect x="55" y="383" width="560" height="24" rx="4" fill="#F8D7DA"/>
+  <text x="70" y="400" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#721C24">🚁 布莱埃斯湖: ❌ 禁飞 · Fanes-Sennes-Braies自然公园</text>
+
+  <!-- ========= TRE CIME + MISURINA ========= -->
+  <rect x="650" y="122" width="590" height="290" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="650" y="122" width="590" height="42" rx="12" fill="#1B4965"/>
+  <rect x="650" y="145" width="590" height="18" fill="#1B4965"/>
+  <text x="665" y="147" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">⛰️ 三峰山远观 + 米苏里纳湖</text>
+
+  <!-- Tre Cime -->
+  <text x="665" y="180" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">⛰️ 三峰山 Tre Cime di Lavaredo (远观)</text>
+  <text x="665" y="200" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">自驾路过远观 · 感受三座标志性尖峰的震撼</text>
+  <text x="665" y="220" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">不进入环线(需3-4h徒步) · 路边观景点停车拍照</text>
+
+  <rect x="665" y="232" width="560" height="42" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="680" y="252" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🅿️ 停车: Tre Cime观景路边 · SS48沿途观景点</text>
+  <text x="680" y="268" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">GPS: 46.6180°N, 12.3090°E · 从Misurina沿收费路上山</text>
+
+  <!-- Misurina -->
+  <text x="665" y="293" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">💧 米苏里纳湖 Lago di Misurina</text>
+  <text x="665" y="313" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">不只停停车场旁观景点 · 沿湖西侧走隐秘小路</text>
+  <text x="665" y="333" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">走10分钟豁然开朗 · 湖边长椅看风从山脊滑过水面</text>
+
+  <rect x="665" y="346" width="560" height="42" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="680" y="366" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🅿️ 停车: Lago di Misurina 湖边停车场</text>
+  <text x="680" y="382" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">GPS: 46.5980°N, 12.2540°E · 湖南侧 · 停车后沿湖西侧步道走</text>
+
+  <!-- Drone -->
+  <rect x="665" y="396" width="560" height="22" rx="4" fill="#F8D7DA"/>
+  <text x="680" y="412" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#721C24">🚁 三峰山/米苏里纳: ❌ 禁飞 · Dolomiti d'Ampezzo自然公园</text>
+
+  <!-- ========= DRIVE TO VENICE ========= -->
+  <rect x="40" y="425" width="1200" height="130" rx="12" fill="#1B4965"/>
+  <text x="55" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">🚗 下午: 自驾前往威尼斯 Venezia · 约3-3.5h</text>
+
+  <rect x="55" y="465" width="470" height="34" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="70" y="486" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#48BB78">🚗 路线: Misurina → Cortina → Belluno → Venezia</text>
+
+  <rect x="55" y="505" width="470" height="34" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="70" y="526" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#5FA8D3">🅿️ 威尼斯停车: Piazzale Roma 停车楼 · GPS: 45.4410°N, 12.3210°E</text>
+
+  <rect x="545" y="465" width="400" height="74" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1"/>
+  <text x="560" y="488" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">⚠️ 威尼斯自驾Tips</text>
+  <text x="560" y="506" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">威尼斯是禁车岛！车只能停在Piazzale Roma</text>
+  <text x="560" y="522" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">或Tronchetto停车楼(€25-30/天) · 然后坐船进岛</text>
+
+  <!-- Timeline -->
+  <rect x="40" y="568" width="1200" height="55" rx="8" fill="#48BB78"/>
+  <text x="55" y="590" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">📅 全天时间轴</text>
+  <text x="55" y="610" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#F0FFF4">6:30出发→7:30布莱埃斯湖划船→10:00三峰山远观→11:00米苏里纳湖午餐→13:00出发威尼斯→16:30到威尼斯停车</text>
+
+  <!-- Hotel -->
+  <rect x="40" y="635" width="1200" height="50" rx="8" fill="#5FA8D3"/>
+  <text x="55" y="658" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">🏨 8/5 威尼斯: 基娅拉小屋 Chiara · 高级双人房 · ¥1,172</text>
+  <text x="55" y="675" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#E8983F">🚁 威尼斯: ❌ 全城禁飞 · 🚗 翌日FR9433航班威尼斯→罗马</text>
+
+  <!-- footer -->
+  <text x="60" y="708" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="708" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">12 / 15</text>
+</svg>

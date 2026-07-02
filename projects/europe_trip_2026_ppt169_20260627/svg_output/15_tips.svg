@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#5FA8D3"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF">🎒 行李清单 + 安全 + 实用Tips</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#F0F4F8">出发前必读</text>
+
+  <!-- Packing -->
+  <rect x="40" y="100" width="390" height="520" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="100" width="390" height="42" rx="12" fill="#1B4965"/>
+  <rect x="40" y="123" width="390" height="18" fill="#1B4965"/>
+  <text x="55" y="125" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">🎒 必带物品</text>
+
+  <text x="55" y="165" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">📄 证件类</text>
+  <text x="55" y="185" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 护照(有效期>6个月) + 申根签证</text>
+  <text x="55" y="203" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 驾照+国际驾照公证翻译件</text>
+  <text x="55" y="221" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 信用卡(Visa/MC) + 少量欧元/瑞郎现金</text>
+  <text x="55" y="239" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 酒店订单/机票行程单打印</text>
+
+  <text x="55" y="268" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">👕 衣物 (7-8月)</text>
+  <text x="55" y="288" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 防风外套(山区早晚凉10-15°C)</text>
+  <text x="55" y="306" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 登山鞋(徒步必备) + 舒适步行鞋</text>
+  <text x="55" y="324" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 短袖+长袖叠穿(日间25-30°C)</text>
+  <text x="55" y="342" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 帽子+墨镜+防晒霜(高海拔紫外线强)</text>
+  <text x="55" y="360" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 雨衣/折叠伞(山区多变天气)</text>
+
+  <text x="55" y="389" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🔌 电子设备</text>
+  <text x="55" y="409" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 万能转换插头(瑞士/意大利不同)</text>
+  <text x="55" y="427" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 充电宝 + 手机充电线</text>
+  <text x="55" y="445" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 相机+备用电池+SD卡</text>
+  <text x="55" y="463" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 eSIM或移动WiFi</text>
+
+  <text x="55" y="492" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🥾 徒步专用</text>
+  <text x="55" y="512" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 登山杖(可选) + 水壶</text>
+  <text x="55" y="530" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 干粮/能量棒(山区餐厅少)</text>
+  <text x="55" y="548" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 创可贴+常备药(晕车/感冒)</text>
+
+  <!-- Drone summary -->
+  <rect x="55" y="570" width="360" height="40" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="70" y="588" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🚁 无人机总表见右侧</text>
+  <text x="70" y="604" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">全程仅龙疆湖+两大环湖可飞</text>
+
+  <!-- Safety -->
+  <rect x="445" y="100" width="380" height="520" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="445" y="100" width="380" height="42" rx="12" fill="#E8983F"/>
+  <rect x="445" y="123" width="380" height="18" fill="#E8983F"/>
+  <text x="460" y="125" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">⚠️ 安全提醒</text>
+
+  <text x="460" y="165" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#721C24">🚨 防扒手重点区域</text>
+  <text x="460" y="188" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🔴 巴黎: 地铁/埃菲尔铁塔/卢浮宫</text>
+  <text x="460" y="206" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🔴 罗马: 斗兽场/西班牙广场/64路公交</text>
+  <text x="460" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🔴 米兰: 大教堂广场/地铁</text>
+
+  <text x="460" y="254" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🛡️ 防范措施</text>
+  <text x="460" y="274" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 贴身腰包 · 双肩包前背</text>
+  <text x="460" y="292" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 护照分开放 · 不带全部现金出门</text>
+  <text x="460" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 手机不放外口袋</text>
+
+  <text x="460" y="340" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🚗 自驾安全</text>
+  <text x="460" y="360" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 意大利ZTL限行区勿入(罚款€100+)</text>
+  <text x="460" y="378" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 瑞士高速Vignette必须贴(无卡控)</text>
+  <text x="460" y="396" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 山区窄路减速 · 注意电围栏</text>
+  <text x="460" y="414" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 停车不留贵重物品在车内</text>
+
+  <text x="460" y="444" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">📞 紧急电话</text>
+  <text x="460" y="464" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#2D3748">🔴 112 欧洲通用紧急电话</text>
+  <text x="460" y="482" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#2D3748">🔴 法国 17 (警察) · 意大利 113</text>
+  <text x="460" y="500" font-family="'Microsoft YaHei', 'PMicrosoft YaHei', Arial, sans-serif" font-size="13" fill="#2D3748">🔴 中国驻法/瑞/意使馆领保</text>
+
+  <!-- Drone Summary Table -->
+  <rect x="840" y="100" width="400" height="520" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="840" y="100" width="400" height="42" rx="12" fill="#721C24"/>
+  <rect x="840" y="123" width="400" height="18" fill="#721C24"/>
+  <text x="855" y="125" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">🚁 无人机飞行总表</text>
+
+  <!-- Table rows -->
+  <text x="855" y="165" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">城市/景点</text>
+  <text x="1110" y="165" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">状态</text>
+  <line x1="855" y1="172" x2="1220" y2="172" stroke="#CBD5E0" stroke-width="1"/>
+
+  <text x="855" y="195" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">巴黎</text>
+  <text x="1110" y="195" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">❌ 禁飞</text>
+
+  <text x="855" y="218" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">苏黎世/卢塞恩/瑞吉山</text>
+  <text x="1110" y="218" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#856404">⚠️ 限飞</text>
+
+  <text x="855" y="241" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">Stoos山</text>
+  <text x="1110" y="241" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#856404">⚠️ 限飞</text>
+
+  <text x="855" y="264" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 龙疆湖 Lungern</text>
+  <text x="1110" y="264" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 可飞</text>
+
+  <text x="855" y="287" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 布里恩茨湖</text>
+  <text x="1110" y="287" text-anchor="end" font-family="'Microsoft YaHei', 'P'Microsoft YaHei', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 可飞</text>
+
+  <text x="855" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 图恩湖</text>
+  <text x="1110" y="310" text-anchor="ed" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">✅ 可飞</text>
+
+  <text x="855" y="333" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">少女峰/格林德瓦</text>
+  <text x="1110" y="333" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#856404">⚠️ 限飞</text>
+
+  <text x="855" y="356" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">劳特布伦嫩</text>
+  <text x="1110" y="356" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#856404">⚠️ 限飞</text>
+
+  <line x1="855" y1="368" x2="1220" y2="368" stroke="#CBD5E0" stroke-width="1"/>
+
+  <text x="855" y="391" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">米兰/加尔达湖</text>
+  <text x="1110" y="391" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">❌ 禁飞</text>
+
+  <text x="855" y="414" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">多洛米蒂全线</text>
+  <text x="1110" y="414" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">❌ 禁飞</text>
+
+  <text x="855" y="437" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">威尼斯</text>
+  <text x="1110" y="437" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">❌ 禁飞</text>
+
+  <text x="855" y="460" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">罗马</text>
+  <text x="1110" y="460" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#721C24">❌ 禁飞</text>
+
+  <!-- Summary box -->
+  <rect x="855" y="480" width="365" height="75" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="870" y="502" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#E8983F">📊 总结</text>
+  <text x="870" y="522" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">✅ 可飞: 龙疆湖/布里恩茨/图恩湖 (3处)</text>
+  <text x="870" y="540" font-family="'Microsoft YoHai', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">⚠️ 限飞: 瑞士山区 (查swisstopo app)</text>
+  <text x="870" y="556" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">❌ 禁飞: 法/意所有城市+多洛米蒂</text>
+
+  <!-- Switzerland drone rules -->
+  <rect x="855" y="565" width="365" height="42" rx="6" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <text x="870" y="583" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#155724">🇨🇭 瑞士: 限高150m · 远离人群1km</text>
+  <text x="870" y="599" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">飞前查 swisstopo app / FOCA drone map</text>
+
+  <!-- footer -->
+  <text x="60" y="708" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="708" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">15 / 15</text>
+</svg>

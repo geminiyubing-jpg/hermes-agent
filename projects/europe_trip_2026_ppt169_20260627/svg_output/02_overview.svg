@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#1B4965"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF">行程总览</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#A0AEC0">15天 · 3国 · 9城</text>
+  <!-- timeline line -->
+  <rect x="60" y="140" width="1160" height="4" rx="2" fill="#CBD5E0"/>
+  <!-- phase sections -->
+  <!-- France -->
+  <rect x="60" y="120" width="340" height="40" rx="20" fill="#E8983F"/>
+  <text x="230" y="147" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFFFFF">🇫🇷 法国巴黎 3天</text>
+  <!-- marker -->
+  <circle cx="80" cy="142" r="8" fill="#E8983F" stroke="#FFFFFF" stroke-width="2"/>
+  <!-- card 1: Paris -->
+  <rect x="60" y="180" width="360" height="440" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="60" y="180" width="360" height="50" rx="12" fill="#E8983F"/>
+  <rect x="60" y="210" width="360" height="20" fill="#E8983F"/>
+  <text x="240" y="213" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF">巴黎 Paris</text>
+  <text x="240" y="260" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#718096">7/25(六) — 7/27(一)</text>
+  <line x1="80" y1="280" x2="400" y2="280" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="80" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 凯旋门 · 香榭丽舍大街</text>
+  <text x="80" y="340" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 埃菲尔铁塔 · 塞纳河游船</text>
+  <text x="80" y="370" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 卢浮宫 · 巴黎圣母院</text>
+  <text x="80" y="400" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 巴黎歌剧院</text>
+  <line x1="80" y1="420" x2="400" y2="420" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="80" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">🏨 巴黎凯旋门万丽酒店</text>
+  <text x="80" y="475" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">    高级房 · 2晚 · ¥6,233</text>
+  <text x="80" y="510" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#E8983F">🚄 7/27 TGV Lyria 922 → 苏黎世</text>
+  <!-- Switzerland -->
+  <rect x="470" y="120" width="340" height="40" rx="20" fill="#5FA8D3"/>
+  <text x="640" y="147" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFFFFF">🇨🇭 瑞士 5天</text>
+  <circle cx="640" cy="142" r="8" fill="#5FA8D3" stroke="#FFFFFF" stroke-width="2"/>
+  <!-- card 2: Swiss -->
+  <rect x="460" y="180" width="360" height="440" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="460" y="180" width="360" height="50" rx="12" fill="#5FA8D3"/>
+  <rect x="460" y="210" width="360" height="20" fill="#5FA8D3"/>
+  <text x="640" y="213" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF">瑞士 Switzerland</text>
+  <text x="640" y="260" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#718096">7/27(一) — 8/1(六)</text>
+  <line x1="480" y1="280" x2="800" y2="280" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="480" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 苏黎世 · 卢塞恩</text>
+  <text x="480" y="340" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 瑞吉山 Mt. Rigi 徒步</text>
+  <text x="480" y="370" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 龙疆 · 因特拉肯环湖</text>
+  <text x="480" y="400" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 少女峰徒步 · 格林德瓦</text>
+  <line x1="480" y1="420" x2="800" y2="420" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="480" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">🏨 5家酒店 · 5晚</text>
+  <text x="480" y="475" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">    苏黎世→卢塞恩→因特拉肯</text>
+  <text x="480" y="500" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">    →格林德瓦→因特拉肯</text>
+  <text x="480" y="535" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#5FA8D3">🚄 8/1 EC 27 → 米兰</text>
+  <!-- Italy -->
+  <rect x="880" y="120" width="340" height="40" rx="20" fill="#48BB78"/>
+  <text x="1050" y="147" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFFFFF">🇮🇹 意大利 7天</text>
+  <circle cx="1180" cy="142" r="8" fill="#48BB78" stroke="#FFFFFF" stroke-width="2"/>
+  <!-- card 3: Italy -->
+  <rect x="860" y="180" width="360" height="440" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="860" y="180" width="360" height="50" rx="12" fill="#48BB78"/>
+  <rect x="860" y="210" width="360" height="20" fill="#48BB78"/>
+  <text x="1040" y="213" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="20" font-weight="bold" fill="#FFFFFF">意大利 Italy</text>
+  <text x="1040" y="260" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#718096">8/1(六) — 8/8(六)</text>
+  <line x1="880" y1="280" x2="1200" y2="280" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="880" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 米兰大教堂 · 奥特莱斯</text>
+  <text x="880" y="340" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 多洛米蒂 · 刀峰山Seceda</text>
+  <text x="880" y="370" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 威尼斯水城 · 贡多拉</text>
+  <text x="880" y="400" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#2D3748">📍 罗马斗兽场 · 梵蒂冈</text>
+  <line x1="880" y1="420" x2="1200" y2="420" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="880" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">🏨 6家酒店 · 7晚</text>
+  <text x="880" y="475" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">    米兰→湖边→多洛米蒂</text>
+  <text x="880" y="500" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#718096">    →威尼斯→罗马</text>
+  <text x="880" y="535" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#48BB78">✈️ 8/6 FR 9433 威尼斯→罗马</text>
+  <!-- footer -->
+  <text x="60" y="700" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="700" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">02 / 15</text>
+</svg>

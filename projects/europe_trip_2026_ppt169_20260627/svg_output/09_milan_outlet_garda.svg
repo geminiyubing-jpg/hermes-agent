@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#48BB78"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF">🇮🇹 米兰 → 奥特莱斯 → 加尔达湖 · 8/1-8/2</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#F0FFF4">Day 8-9 · 购物+湖畔</text>
+
+  <!-- Drone badge -->
+  <rect x="40" y="88" width="300" height="22" rx="4" fill="#F8D7DA"/>
+  <text x="55" y="104" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#721C24">🚁 米兰/加尔达湖: ❌ 城区禁飞 · 湖区需查DJI Fly</text>
+
+  <!-- ========= DAY 8: 8/1 ========= -->
+  <rect x="40" y="120" width="590" height="295" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="120" width="590" height="42" rx="12" fill="#48BB78"/>
+  <rect x="40" y="143" width="590" height="18" fill="#48BB78"/>
+  <text x="55" y="145" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" font-weight="bold" fill="#FFFFFF">🚄 Day 8 (8/1): 苏黎世→米兰</text>
+
+  <!-- Timeline -->
+  <rect x="55" y="175" width="560" height="34" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1"/>
+  <text x="70" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🚄 EC 27: 苏黎世 18:33 → 米兰 21:53 · 3h20m · ¥695 ✓已出票</text>
+
+  <rect x="55" y="216" width="560" height="34" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1"/>
+  <text x="70" y="237" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#2D3748">🚕 到达米兰中央车站 → 打车到酒店入住</text>
+
+  <!-- Milan highlights -->
+  <text x="55" y="270" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">📍 米兰大教堂 Duomo di Milano</text>
+  <text x="55" y="290" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">世界最大哥特式教堂 · 哥特尖塔群 · 登顶看米兰全景</text>
+  <text x="55" y="310" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">埃马努埃莱二世长廊 Galleria · 时装四角 · 奢侈品橱窗</text>
+  <text x="55" y="330" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">斯卡拉歌剧院 Teatro alla Scala</text>
+
+  <rect x="55" y="345" width="560" height="28" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1"/>
+  <text x="70" y="364" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#E8983F">💡 如到达晚可仅夜游大教堂广场，灯光下别有韵味 · 次日全天米兰</text>
+
+  <!-- Hotel Day8 -->
+  <rect x="55" y="380" width="560" height="30" rx="6" fill="#48BB78"/>
+  <text x="70" y="400" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">🏨 美利亚怡思得酒店 Meliá INNSiDE · Via G. Fara 41 · ¥1,456 · 延期付款</text>
+
+  <!-- ========= DAY 9: 8/2 ========= -->
+  <rect x="650" y="120" width="590" height="475" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="650" y="120" width="590" height="42" rx="12" fill="#E8983F"/>
+  <rect x="650" y="143" width="590" height="18" fill="#E8983F"/>
+  <text x="665" y="145" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" font-weight="bold" fill="#FFFFFF">🛍️ Day 9 (8/2): 米兰奥特莱斯 → 加尔达湖</text>
+
+  <!-- Morning: Outlet -->
+  <text x="665" y="180" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">🛍️ 上午: Fidenza Village Outlet</text>
+  <text x="665" y="200" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#2D3748">米兰出发约1.5h · 欧洲奢侈品牌折扣村</text>
+  <text x="665" y="220" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">PRADA, Gucci, Armani, Bottega Veneta等</text>
+  <text x="665" y="240" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">购物约3-4小时 · 餐厅+咖啡馆</text>
+
+  <rect x="665" y="252" width="560" height="28" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1"/>
+  <text x="680" y="271" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#E8983F">💡 备选: FoxTown (瑞士)或 Serravalle (米兰东) · Fidenza最热门</text>
+
+  <!-- Afternoon: Drive to Garda -->
+  <text x="665" y="305" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">🚗 下午: 自驾前往加尔达湖 Lago di Garda</text>
+  <rect x="665" y="320" width="560" height="34" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1"/>
+  <text x="680" y="341" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#2D3748">🚗 Fidenza → 加尔达湖南岸 约2.5-3h高速</text>
+
+  <text x="665" y="370" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">📍 加尔达湖亮点</text>
+  <text x="665" y="390" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 意大利最大湖泊 · 南岸平缓沙滩 · 北岸多洛米蒂山景</text>
+  <text x="665" y="410" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 锡尔苗内 Sirmione: 湖中半岛 · 罗马遗址+温泉</text>
+  <text x="665" y="430" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 马尔切西内 Malcesine: 东北岸 · 缆车上Monte Baldo</text>
+  <text x="665" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🟢 里莫内 Limone: 柠檬小镇 · 湖畔最美公路</text>
+
+  <!-- Hotel Day9 -->
+  <rect x="665" y="470" width="560" height="48" rx="6" fill="#5FA8D3"/>
+  <text x="680" y="490" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">🏨 杜拉克酒店 Hotel du Lac · 加尔多内里维拉 (加尔达湖西岸) · 经典双床 · ¥1,337</text>
+  <text x="680" y="508" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#F0F4F8">8/2-8/3 1晚 · 经典双床或双人房 · 湖景小镇 · 多洛米蒂入口</text>
+
+  <!-- Timeline -->
+  <rect x="665" y="518" width="560" height="68" rx="6" fill="#1B4965"/>
+  <text x="680" y="540" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFFFFF">📅 Day 9 时间轴</text>
+  <text x="680" y="560" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">9:00-13:00 Fidenza购物 · 13:00午餐 · 14:00出发</text>
+  <text x="680" y="578" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">14:00-17:00 自驾到加尔达湖 · 湖畔入住 · 傍晚湖边散步</text>
+
+  <!-- LEFT BOTTOM: Milan hotel info continued -->
+  <rect x="40" y="425" width="590" height="170" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="425" width="590" height="42" rx="12" fill="#1B4965"/>
+  <rect x="40" y="448" width="590" height="18" fill="#1B4965"/>
+  <text x="55" y="450" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" font-weight="bold" fill="#FFFFFF">🇮🇹 Day 8-9 米兰城市亮点</text>
+
+  <text x="55" y="485" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">📍 8/2上午逛米兰后出发奥特莱斯:</text>
+  <text x="55" y="508" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🏰 斯福尔扎城堡 Castello Sforzesco · 免费</text>
+  <text x="55" y="528" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🎨 达芬奇《最后的晚餐》Santa Maria delle Grazie (需提前预约)</text>
+  <text x="55" y="548" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">☕ 纳维利运河区 Navigli · 早晨咖啡馆+Aperitivo</text>
+
+  <rect x="55" y="562" width="560" height="24" rx="4" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="70" y="578" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#E8983F">💡 米兰租车: 市区取车后出发 · 注意ZTL交通限行区(白区ZTL勿驶入)</text>
+
+  <!-- footer -->
+  <text x="60" y="708" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="708" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">09 / 15</text>
+</svg>

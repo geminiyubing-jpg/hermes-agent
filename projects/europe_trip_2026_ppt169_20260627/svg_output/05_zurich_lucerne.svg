@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="70" fill="#5FA8D3"/>
+  <text x="60" y="44" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF">🇨🇭 7/28 一日两山 · Stoos山脊+瑞吉山 · 全程公共交通</text>
+  <text x="1220" y="44" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" fill="#F0F4F8">Day 4 · 铁人双杀 ⛰️⛰️ 当晚住卢塞恩</text>
+
+  <!-- Day 3 strip -->
+  <rect x="40" y="78" width="1200" height="26" rx="6" fill="#1B4965"/>
+  <text x="60" y="96" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#A0AEC0">Day 3晚 7/27: TGV Lyria 922 巴黎18:22→苏黎世22:26 · 🏨 苏黎世蒙塔那酒店 ¥1,785</text>
+
+  <!-- ===== WARNING BAR ===== -->
+  <rect x="40" y="112" width="1200" height="46" rx="6" fill="#FFF3CD" stroke="#FFC107" stroke-width="1.5"/>
+  <text x="55" y="132" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#856404">⚠️ 铁人路线 · 全程公共交通 · 早上需先到卢塞恩放行李(多花~1h) · 当晚回卢塞恩住 · 第二天租车自驾</text>
+  <text x="55" y="150" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#856404">👟 防滑防水登山鞋 · 🧴 山脊无遮挡防晒 · ⏰ 末班缆车死线 · 出门查MeteoSwiss大风暴雨直接放弃徒步</text>
+
+  <!-- ============ LEFT: STOOS (Chapter 1) ============ -->
+  <rect x="40" y="168" width="590" height="452" rx="12" fill="#F0FFF4" stroke="#28A745" stroke-width="1"/>
+  <rect x="40" y="168" width="590" height="40" rx="12" fill="#28A745"/>
+  <rect x="40" y="194" width="590" height="14" fill="#28A745"/>
+  <text x="60" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">第一章 · Stoos山脊徒步 🥾 (上午)</text>
+
+  <!-- Timeline -->
+  <rect x="60" y="218" width="550" height="26" rx="4" fill="#E3F2FD" stroke="#1976D2" stroke-width="1"/>
+  <text x="72" y="235" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">06:45</text>
+  <text x="128" y="235" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚂 苏黎世HB→卢塞恩 IR70 (50min) · 必须早起!</text>
+
+  <rect x="60" y="248" width="550" height="26" rx="4" fill="#FFF8DC" stroke="#DAA520" stroke-width="1"/>
+  <text x="72" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#8B6914">07:35</text>
+  <text x="128" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🧳 卢塞恩站→Waldstätterhof(850m) 放行李 · 寄存前台</text>
+
+  <rect x="60" y="278" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#28A745" stroke-width="1"/>
+  <text x="72" y="295" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">08:05</text>
+  <text x="128" y="295" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚂 卢塞恩→Arth-Goldau→Schwyz (约35min含换乘)</text>
+
+  <rect x="60" y="308" width="550" height="26" rx="4" fill="#F0FFF4" stroke="#28A745" stroke-width="1"/>
+  <text x="72" y="325" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">08:40</text>
+  <text x="128" y="325" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚌 巴士501路 Schwyz→Stoosbahn缆车站 (8min)</text>
+
+  <rect x="60" y="338" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#28A745" stroke-width="1"/>
+  <text x="72" y="355" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">08:55</text>
+  <text x="128" y="355" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚡 世界最陡滚轮缆车Stoosbahn → Stoos村</text>
+
+  <rect x="60" y="368" width="550" height="42" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="2"/>
+  <text x="72" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">09:15</text>
+  <text x="128" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🥾 Klingenstock→Fronalpstock山脊精华徒步</text>
+  <text x="128" y="402" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">4.5km · 约3h · K→F方向(先低后高) · 越走越开阔</text>
+
+  <rect x="60" y="416" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#28A745" stroke-width="1"/>
+  <text x="72" y="433" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">12:15</text>
+  <text x="128" y="433" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🏔️ Fronalpstock顶拍照 → 缆车下 → 滚轮缆车下山</text>
+
+  <rect x="60" y="446" width="550" height="26" rx="4" fill="#F0FFF4" stroke="#28A745" stroke-width="1"/>
+  <text x="72" y="463" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">12:45</text>
+  <text x="128" y="463" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚌 巴士501回Schwyz · 🍜 快餐午饭(20min)</text>
+
+  <!-- Stoos tips -->
+  <rect x="60" y="482" width="550" height="82" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.4"/>
+  <text x="75" y="500" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">💡 Stoos避坑</text>
+  <text x="75" y="518" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">🎫 Peak Experience Ticket · STP缆车半价 · 补约35CHF</text>
+  <text x="75" y="534" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">🚨 末班缆车约16:30-17:00 · 建议15:30前到F山顶</text>
+  <text x="75" y="550" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">⚠️ 山脊路窄有碎石·恐高慎行·方向K→F景色递增</text>
+
+  <!-- Drone -->
+  <rect x="60" y="572" width="550" height="24" rx="4" fill="#FFF3CD"/>
+  <text x="75" y="588" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#856404">🚁 Stoos: ⚠️ 山区限飞 · 查swisstopo</text>
+
+  <!-- ============ RIGHT: RIGI (Chapter 2) ============ -->
+  <rect x="650" y="168" width="590" height="452" rx="12" fill="#E3F2FD" stroke="#1976D2" stroke-width="1"/>
+  <rect x="650" y="168" width="590" height="40" rx="12" fill="#1976D2"/>
+  <rect x="650" y="194" width="590" height="14" fill="#1976D2"/>
+  <text x="670" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">第二章 · 瑞吉山黄金环线 🚢🚞🚡 (下午)</text>
+
+  <!-- Timeline -->
+  <rect x="670" y="218" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#1976D2" stroke-width="1"/>
+  <text x="682" y="235" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">13:10</text>
+  <text x="745" y="235" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚂 Schwyz→Brunnen(5min) · 换游船横渡</text>
+
+  <rect x="670" y="248" width="550" height="26" rx="4" fill="#E3F2FD" stroke="#1976D2" stroke-width="1"/>
+  <text x="682" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">13:20</text>
+  <text x="745" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚢 Brunnen→Vitznau 游船横渡(约35min) · STP免费</text>
+
+  <rect x="670" y="278" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#1976D2" stroke-width="1"/>
+  <text x="682" y="295" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">14:00</text>
+  <text x="745" y="295" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚞 Vitznau 复古齿轮火车 → Rigi Kulm山顶 (30min)</text>
+
+  <rect x="670" y="308" width="550" height="42" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="2"/>
+  <text x="682" y="326" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">14:30</text>
+  <text x="745" y="326" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🏔️ Rigi Kulm 1798m "山峦皇后" 360°全景</text>
+  <text x="745" y="342" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">停留30-45min · 复古红色齿轮火车出片绝佳</text>
+
+  <rect x="670" y="356" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#1976D2" stroke-width="1"/>
+  <text x="682" y="373" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">15:15</text>
+  <text x="745" y="373" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚶 徒步Rigi Kulm→Rigi Kaltbad · 1.5h 平缓下坡</text>
+
+  <rect x="670" y="386" width="550" height="26" rx="4" fill="#E3F2FD" stroke="#1976D2" stroke-width="1"/>
+  <text x="682" y="403" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#0D47A1">16:45</text>
+  <text x="745" y="403" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#2D3748">🚡 Rigi Kaltbad→Weggis 缆车 · 空中观湖景</text>
+
+  <rect x="670" y="416" width="550" height="26" rx="4" fill="#FFFFFF" stroke="#48BB78" stroke-width="1.5"/>
+  <text x="682" y="433" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">17:00</text>
+  <text x="745" y="433" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">🚢 Weggis游船→卢塞恩 (40min) · STP最爽福利!</text>
+
+  <rect x="670" y="446" width="550" height="26" rx="4" fill="#D4EDDA" stroke="#28A745" stroke-width="1.5"/>
+  <text x="682" y="463" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">17:40</text>
+  <text x="745" y="463" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">🏁 到达卢塞恩 · 三种交通完美闭环 ✅</text>
+
+  <!-- Rigi tips -->
+  <rect x="670" y="482" width="550" height="82" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.4"/>
+  <text x="685" y="500" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">💡 瑞吉山避坑</text>
+  <text x="685" y="518" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">🎫 STP全覆盖! 游船+齿轮火车+缆车全免费</text>
+  <text x="685" y="534" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">🔥 Plan B(累了/天气差): 跳过徒步 · 齿轮火车上下</text>
+  <text x="685" y="550" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">    → 缆车下Weggis → 游船回 · 轻松版</text>
+
+  <!-- Drone -->
+  <rect x="670" y="572" width="550" height="24" rx="4" fill="#FFF3CD"/>
+  <text x="685" y="588" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#856404">🚁 瑞吉山: ⚠️ 限飞150m · 查swisstopo</text>
+
+  <!-- ===== BOTTOM: HOTEL ===== -->
+  <rect x="40" y="630" width="1200" height="56" rx="8" fill="#5FA8D3"/>
+  <text x="60" y="652" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🏨 7/28晚 卢塞恩: 沃尔德斯塔得霍夫品质酒店 · 庭院双人房 · ¥1,807 · Zentralstrasse 4(火车站850m)</text>
+  <text x="60" y="672" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#F0F4F8">🚗 7/29早上卢塞恩SIXT取车 → 自驾龙疆湖+因特拉肯 (详见P06) · 行李早上从酒店取出装车</text>
+
+  <!-- footer -->
+  <text x="60" y="708" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="708" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">05 / 15</text>
+</svg>

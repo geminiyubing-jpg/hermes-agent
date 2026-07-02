@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#1B4965"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF">费用汇总</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#A0AEC0">11家 14晚 + 交通 + 租车</text>
+
+  <!-- ========= LEFT: HOTEL TABLE ========= -->
+  <text x="60" y="115" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="18" font-weight="bold" fill="#1B4965">🏨 酒店费用明细 (11家, 14晚)</text>
+
+  <!-- table header -->
+  <rect x="60" y="125" width="760" height="28" rx="4" fill="#1B4965"/>
+  <text x="72" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">城市</text>
+  <text x="170" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">酒店名称</text>
+  <text x="490" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">入住</text>
+  <text x="570" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">晚</text>
+  <text x="620" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">房型</text>
+  <text x="770" y="144" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#FFFFFF">费用(¥)</text>
+
+  <!-- Row 1: Paris -->
+  <rect x="60" y="153" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">巴黎</text>
+  <text x="170" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">凯旋门万丽酒店 Renaissance</text>
+  <text x="490" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/25</text>
+  <text x="570" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">2</text>
+  <text x="620" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">豪华房</text>
+  <text x="770" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">6,233</text>
+
+  <!-- Row 2: Zurich -->
+  <text x="72" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">苏黎世</text>
+  <text x="170" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">蒙塔那酒店 Montana</text>
+  <text x="490" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/27</text>
+  <text x="570" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">豪华双人</text>
+  <text x="770" y="196" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">1,785</text>
+
+  <!-- Row 3: Lucerne -->
+  <rect x="60" y="207" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">卢塞恩</text>
+  <text x="170" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">沃尔德斯塔品质酒店 Waldstätterhof</text>
+  <text x="490" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/28</text>
+  <text x="570" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">舒适双人</text>
+  <text x="770" y="224" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">1,807</text>
+
+  <!-- Row 4: Beatenberg -->
+  <text x="72" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">因特拉肯</text>
+  <text x="170" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">多林特饭店 Dorint</text>
+  <text x="490" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/29</text>
+  <text x="570" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">标准公寓</text>
+  <text x="770" y="250" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">3,016</text>
+
+  <!-- Row 5: Grindelwald -->
+  <rect x="60" y="261" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">格林德瓦</text>
+  <text x="170" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">Kirchbuehl Superior</text>
+  <text x="490" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/30</text>
+  <text x="570" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">一卧公寓</text>
+  <text x="770" y="278" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">2,940</text>
+
+  <!-- Row 6: Beatenberg Resort -->
+  <text x="72" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">因特拉肯</text>
+  <text x="170" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">Hotel Seepark Thun</text>
+  <text x="490" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/31</text>
+  <text x="570" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">双人房</text>
+  <text x="770" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">2,495</text>
+
+  <!-- Row 7: Milan -->
+  <rect x="60" y="315" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">米兰</text>
+  <text x="170" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">美利亚怡思得 Meliá INNSiDE</text>
+  <text x="490" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/1</text>
+  <text x="570" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">怡思得房</text>
+  <text x="770" y="332" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">1,456</text>
+
+  <!-- Row 8: Gardone Riviera -->
+  <text x="72" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">加尔达湖</text>
+  <text x="170" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">杜拉克酒店 Hotel du Lac</text>
+  <text x="490" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/2</text>
+  <text x="570" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">经典双床</text>
+  <text x="770" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">1,337</text>
+
+  <!-- Row 9: Brescia -->
+  <rect x="60" y="369" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">卡斯泰尔</text>
+  <text x="170" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">Mirabell Alp. Garden</text>
+  <text x="490" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/3</text>
+  <text x="570" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">2</text>
+  <text x="620" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">豪华套房</text>
+  <text x="770" y="386" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">5,458</text>
+
+  <!-- Row 10: REMOVED (merged into Row 9) -->
+  <text x="72" y="412" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0" font-style="italic">—</text>
+  <text x="170" y="412" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="10" fill="#A0AEC0" font-style="italic">(Mirabell 2晚合并)</text>
+
+  <!-- Row 11: Venice -->
+  <rect x="60" y="423" width="760" height="26" fill="#F0F4F8"/>
+  <text x="72" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">威尼斯</text>
+  <text x="170" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">基娅拉小屋 Chiara</text>
+  <text x="490" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/5</text>
+  <text x="570" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">1</text>
+  <text x="620" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">高级双人</text>
+  <text x="770" y="440" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">1,172</text>
+
+  <!-- Row 12: Rome -->
+  <text x="72" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">罗马</text>
+  <text x="170" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">宫廷大酒店 Grand Hotel Palace</text>
+  <text x="490" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/6</text>
+  <text x="570" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">2</text>
+  <text x="620" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">高级特大</text>
+  <text x="770" y="466" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">3,723</text>
+
+  <!-- Hotel total -->
+  <rect x="60" y="495" width="760" height="34" rx="4" fill="#E8983F"/>
+  <text x="170" y="517" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">酒店合计</text>
+  <text x="570" y="517" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" fill="#FFFFFF">14晚</text>
+  <text x="770" y="517" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">¥31,422</text>
+
+  <!-- Note -->
+  <rect x="60" y="540" width="760" height="58" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="75" y="560" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">• 入住人: LI/MING · 含部分税/费 · 部分离店后付</text>
+  <text x="75" y="580" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">• TGV Lyria 9223 ✓已出票 · 瑞士日通票CHF123/天 · 卢浮宫32€</text>
+
+  <!-- ========= RIGHT: TRANSPORT ========= -->
+  <text x="840" y="115" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="18" font-weight="bold" fill="#1B4965">🚗 交通费用</text>
+
+  <!-- Train EC27 -->
+  <rect x="840" y="125" width="380" height="62" rx="8" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="855" y="145" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">8/1 EC 27 · 苏黎世→米兰 18:33-21:53</text>
+  <text x="855" y="168" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#2D3748">3人 ✓已出票</text>
+  <text x="1190" y="168" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#E8983F">¥695</text>
+
+  <!-- Flight FR9433 -->
+  <rect x="840" y="195" width="380" height="62" rx="8" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="855" y="215" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">8/6 FR 9433 · 威尼斯→罗马 17:38-21:14</text>
+  <text x="855" y="238" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#2D3748">3人 ✓已出票</text>
+  <text x="1190" y="238" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#E8983F">¥1,002</text>
+
+  <!-- Car rental CH -->
+  <rect x="840" y="265" width="380" height="72" rx="8" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <text x="855" y="285" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">🚗 SIXT 瑞士租车 VW Golf 5座自动挡</text>
+  <text x="855" y="304" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">取车 7/29 07:30 卢塞恩 Haldenstrasse 11</text>
+  <text x="855" y="322" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">还车 8/1 18:00 苏黎世 Pfingstwegstr. 3</text>
+
+  <!-- Car rental IT -->
+  <rect x="840" y="345" width="380" height="72" rx="8" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <text x="855" y="365" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">🚗 Autovia 意大利租车 Toyota C-HR 5座</text>
+  <text x="855" y="384" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">取车 8/2 08:00 米兰 Piazza 4 Novembre n.2</text>
+  <text x="855" y="402" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">还车 8/5 18:00 威尼斯 Via stazione 18e/20</text>
+
+  <!-- Grand total -->
+  <rect x="840" y="430" width="380" height="80" rx="8" fill="#1B4965"/>
+  <text x="855" y="460" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" fill="#FFFFFF">已确认支出合计</text>
+  <text x="855" y="494" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="28" font-weight="bold" fill="#E8983F">¥33,119</text>
+  <text x="1190" y="494" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">酒店+交通</text>
+
+  <!-- Pending -->
+  <rect x="840" y="520" width="380" height="78" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1"/>
+  <text x="855" y="542" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#E8983F">📋 待出票/待定</text>
+  <text x="855" y="562" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">• 北京→巴黎 机票 (3人)</text>
+  <text x="855" y="580" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">• TGV Lyria 922 巴黎→苏黎世 7/27</text>
+  <text x="855" y="596" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">• 罗马→北京 返程机票 · 租车费</text>
+
+  <!-- footer -->
+  <text x="60" y="700" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="700" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">03 / 15</text>
+</svg>

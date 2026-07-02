@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B4965"/>
+      <stop offset="50%" stop-color="#162D3F"/>
+      <stop offset="100%" stop-color="#0D1B2A"/>
+    </linearGradient>
+    <linearGradient id="accentLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E8983F"/>
+      <stop offset="100%" stop-color="#5FA8D3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bgGrad)"/>
+  <!-- decorative dots / stars -->
+  <circle cx="120" cy="100" r="2" fill="#FFFFFF" fill-opacity="0.3"/>
+  <circle cx="200" cy="60" r="1.5" fill="#FFFFFF" fill-opacity="0.2"/>
+  <circle cx="1100" cy="120" r="2" fill="#FFFFFF" fill-opacity="0.25"/>
+  <circle cx="1180" cy="80" r="1.5" fill="#FFFFFF" fill-opacity="0.15"/>
+  <circle cx="950" cy="50" r="1" fill="#FFFFFF" fill-opacity="0.2"/>
+  <circle cx="80" cy="200" r="1" fill="#FFFFFF" fill-opacity="0.15"/>
+  <!-- route line decoration -->
+  <path d="M 150 560 Q 400 420 640 480 T 1130 360" stroke="url(#accentLine)" stroke-width="2.5" fill="none" stroke-dasharray="8 6" stroke-opacity="0.5"/>
+  <circle cx="150" cy="560" r="6" fill="#E8983F"/>
+  <circle cx="1130" cy="360" r="6" fill="#5FA8D3"/>
+  <circle cx="640" cy="480" r="4" fill="#FFFFFF" fill-opacity="0.5"/>
+  <!-- city dots on route -->
+  <circle cx="250" cy="530" r="3" fill="#E8983F" fill-opacity="0.6"/>
+  <circle cx="470" cy="460" r="3" fill="#5FA8D3" fill-opacity="0.6"/>
+  <circle cx="850" cy="410" r="3" fill="#48BB78" fill-opacity="0.6"/>
+  <!-- main title -->
+  <text x="640" y="310" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="64" font-weight="bold" fill="#FFFFFF">法意瑞家庭旅行</text>
+  <!-- accent underline -->
+  <rect x="490" y="335" width="300" height="4" rx="2" fill="url(#accentLine)"/>
+  <!-- subtitle -->
+  <text x="640" y="390" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="26" fill="#A0AEC0">2026.7.25 — 8.8 · 15天欧洲三国探索之旅</text>
+  <!-- route tags -->
+  <rect x="390" y="430" width="110" height="36" rx="18" fill="#E8983F" fill-opacity="0.15" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="445" y="454" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#E8983F">🇫🇷 法国</text>
+  <rect x="520" y="430" width="110" height="36" rx="18" fill="#5FA8D3" fill-opacity="0.15" stroke="#5FA8D3" stroke-width="1.5"/>
+  <text x="575" y="454" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#5FA8D3">🇨🇭 瑞士</text>
+  <rect x="650" y="430" width="110" height="36" rx="18" fill="#48BB78" fill-opacity="0.15" stroke="#48BB78" stroke-width="1.5"/>
+  <text x="705" y="454" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#48BB78">🇮🇹 意大利</text>
+  <!-- family info -->
+  <text x="640" y="640" text-anchor="middle" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#A0AEC0">Family Trip · 3人家庭 · 14晚住宿 · 4段交通</text>
+</svg>

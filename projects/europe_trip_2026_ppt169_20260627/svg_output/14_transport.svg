@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#1B4965"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF">🚗✈️🚄 交通汇总 · 法意瑞全程</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#A0AEC0">长途 + 租车 + 每日导航</text>
+
+  <!-- ===== SECTION 1: Long-distance ===== -->
+  <rect x="40" y="95" width="1200" height="105" rx="10" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <text x="55" y="118" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">📋 长途交通</text>
+
+  <text x="55" y="140" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/27 🚄 TGV Lyria 9223 巴黎→苏黎世 18:22-22:26 一等座 ✓已出票</text>
+  <text x="55" y="158" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/1 🚄 EC 27 苏黎世→米兰 18:33-21:53 · ¥695 ✓</text>
+  <text x="55" y="176" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/6 ✈️ FR 9433 威尼斯→罗马 17:38-21:14 · ¥1,002 ✓  ｜  8/8 ✈️ 罗马→北京 待定</text>
+  <text x="55" y="192" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#718096">🎫 Swiss Saver Day Pass: 7/28 + 7/30 各3张(成人CHF52×2 + 儿童CHF19)</text>
+
+  <!-- ===== SECTION 2: Car Rental ===== -->
+  <rect x="40" y="210" width="590" height="210" rx="10" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <rect x="40" y="210" width="590" height="36" rx="10" fill="#28A745"/>
+  <rect x="40" y="228" width="590" height="18" fill="#28A745"/>
+  <text x="55" y="233" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🚗 瑞士租车 · SIXT · VW Golf 5座AT</text>
+
+  <text x="55" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">📍 取车</text>
+  <text x="55" y="283" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📅 7/29 07:30 · 卢塞恩 Haldenstrasse 11, 6006</text>
+  <text x="55" y="300" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📞 +41 88 488 4444 · 营业 07:00-16:00</text>
+  <text x="55" y="317" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">💡 卢塞恩火车站出来左转→右转，走850m，国家大酒店对面</text>
+
+  <text x="55" y="345" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">📍 还车</text>
+  <text x="55" y="363" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📅 8/1 18:00 · 苏黎世 Pfingstwegstr. 3, 8005</text>
+  <text x="55" y="380" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📞 +41 88 488 4444 · 营业 06:30-18:00</text>
+  <text x="55" y="397" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">💡 距苏黎世火车站约2.8km，步行8分钟</text>
+
+  <text x="55" y="415" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">✅ 含: 碰撞险/盗窃险/三方险/无限里程/增值税</text>
+
+  <!-- IT rental -->
+  <rect x="650" y="210" width="590" height="210" rx="10" fill="#D4EDDA" stroke="#28A745" stroke-width="1"/>
+  <rect x="650" y="210" width="590" height="36" rx="10" fill="#28A745"/>
+  <rect x="650" y="228" width="590" height="18" fill="#28A745"/>
+  <text x="665" y="233" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🚗 意大利租车 · Autovia · Toyota C-HR 5座AT</text>
+
+  <text x="665" y="265" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">📍 取车</text>
+  <text x="665" y="283" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📅 8/2 08:00 · 米兰 Piazza 4 Novembre n.2</text>
+  <text x="665" y="300" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📞 +39 038 766 1161 · 营业 08:00-20:00</text>
+  <text x="665" y="317" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">💡 距米兰火车站约0.7km · 还车在Sammartini停车场</text>
+
+  <text x="665" y="345" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#155724">📍 还车</text>
+  <text x="665" y="363" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📅 8/5 18:00 · 威尼斯 Via stazione 18e/20</text>
+  <text x="665" y="380" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">📞 +39 038 597 3308 · 营业 08:30-18:00</text>
+  <text x="665" y="397" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">💡 距威尼斯火车站约150m · Saba停车场</text>
+
+  <text x="665" y="415" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#155724">✅ 含: 碰撞险/盗窃险/无限里程 · 门店另付单程费€91.5</text>
+
+  <!-- ===== SECTION 3: Daily Navigation ===== -->
+  <rect x="40" y="430" width="1200" height="240" rx="10" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="430" width="1200" height="36" rx="10" fill="#1B4965"/>
+  <rect x="40" y="448" width="1200" height="18" fill="#1B4965"/>
+  <text x="55" y="453" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🗺️ 每日自驾导航路线</text>
+
+  <!-- Swiss -->
+  <text x="55" y="483" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#28A745">🇨🇭 瑞士自驾段</text>
+  <text x="55" y="501" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/29 卢塞恩取车→Schlattli缆车→Stoos山脊徒步→Fronalpstock缆车下→龙疆湖(Lungern)→因特拉肯</text>
+  <text x="55" y="519" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/30 因特拉肯→Grindelwald Terminal(缆车)→Männlichen→徒步Kleine Scheidegg→(火车)→劳特布伦嫩→因特拉肯</text>
+  <text x="55" y="537" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">7/31 因特拉肯→劳特布伦嫩瀑布谷→环湖(布里恩茨/图恩)→因特拉肯</text>
+  <text x="55" y="555" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/1 因特拉肯→苏黎世还车(约2h)→EC27火车→米兰</text>
+
+  <!-- Italy -->
+  <text x="55" y="585" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">🇮🇹 意大利自驾段</text>
+  <text x="55" y="603" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/2 米兰取车→Fidenza奥特莱斯(A1高速约1.5h)→加尔达湖北岸→博尔扎诺</text>
+  <text x="55" y="621" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/3 博尔扎诺→富内斯山谷(Parkplatz Bergerplatz)→Passo Tre Croci→索拉皮斯湖→Ortisei</text>
+  <text x="55" y="639" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/4 Ortisei→Funivie Seceda(刀锋山)→休斯高原→SS48→Passo Pordoi→St Vigil</text>
+  <text x="55" y="657" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#2D3748">8/5 St Vigil→布莱埃斯湖→三峰山→米苏里纳湖→SS48→SS51→威尼斯还车</text>
+
+  <!-- Warning -->
+  <rect x="820" y="475" width="400" height="55" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1"/>
+  <text x="835" y="495" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#E8983F">⚠️ 自驾提醒</text>
+  <text x="835" y="513" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="10" fill="#718096">🇨🇭 高速Vignette CHF40必买 · 山区窄路减速</text>
+  <text x="835" y="523" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="10" fill="#718096">🇮🇹 ZTL禁区勿入! · 限速摄像头多 · 城区禁驶入</text>
+
+  <!-- STP note -->
+  <rect x="820" y="540" width="400" height="36" rx="6" fill="#D4EDDA"/>
+  <text x="835" y="560" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#155724">🎫 Swiss Travel Pass: 火车/游船/公交免费</text>
+  <text x="835" y="572" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="10" fill="#155724">缆车75折 · 买灵活通票3天或连续通票4天</text>
+
+  <!-- footer -->
+  <text x="60" y="700" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="700" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">14 / 15</text>
+</svg>

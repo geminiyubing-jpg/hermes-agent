@@ -1413,13 +1413,12 @@ class FeishuAdapter(BasePlatformAdapter):
     supports_code_blocks = True  # Feishu renders fenced code blocks
     splits_long_messages = True  # send() chunks via truncate_message(MAX_MESSAGE_LENGTH)
 
-    MAX_MESSAGE_LENGTH = 8000
+    MAX_MESSAGE_LENGTH = 32000
     # Max distinct chat IDs retained in _chat_locks before LRU eviction kicks in.
     CHAT_LOCK_MAX_SIZE: int = 1000
     # Threshold for detecting Feishu client-side message splits.
-    # When a chunk is near the ~4096-char practical limit, a continuation
-    # is almost certain.
-    _SPLIT_THRESHOLD = 4000
+    # Chunks >= this length use a longer send delay.
+    _SPLIT_THRESHOLD = 8000
 
     # =========================================================================
     # Lifecycle — init / settings / connect / disconnect

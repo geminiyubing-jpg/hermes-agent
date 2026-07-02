@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <rect width="1280" height="720" fill="#FFFFFF"/>
+  <!-- header -->
+  <rect x="0" y="0" width="1280" height="80" fill="#5FA8D3"/>
+  <text x="60" y="50" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF">🇨🇭 少女峰地区全天漫游 · 徒步+无车村+游船+梦幻山坡 · 7/30</text>
+  <text x="1220" y="50" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" fill="#F0F4F8">Day 6 · STP日通票全覆盖</text>
+
+  <!-- STP banner -->
+  <rect x="40" y="95" width="1200" height="38" rx="6" fill="#E8983F"/>
+  <text x="60" y="120" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🎫 Swiss Travel Pass 日通票 · 缆车75折 · 游船/火车全免费 · 一天玩遍少女峰地区精华</text>
+
+  <!-- ========= MORNING BLOCK ========= -->
+  <rect x="40" y="145" width="585" height="365" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="40" y="145" width="585" height="42" rx="12" fill="#5FA8D3"/>
+  <rect x="40" y="168" width="585" height="18" fill="#5FA8D3"/>
+  <text x="60" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">☀️ 上午: 门利辛→客来雪德经典徒步</text>
+
+  <!-- Step 1 -->
+  <rect x="60" y="200" width="545" height="52" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1.5"/>
+  <circle cx="82" cy="226" r="15" fill="#5FA8D3"/>
+  <text x="82" y="232" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#FFFFFF">1</text>
+  <text x="108" y="220" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🚡 格林德瓦Terminal → 门利辛 Männlichen</text>
+  <text x="108" y="238" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">⚠️ 必须在Terminal站坐缆车(非Grindelwald站) · STP 75折 · 缆车上俯瞰梦幻山坡</text>
+
+  <!-- Step 2 -->
+  <rect x="60" y="260" width="545" height="50" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <circle cx="82" cy="285" r="15" fill="#E8983F"/>
+  <text x="82" y="291" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#FFFFFF">★</text>
+  <text x="108" y="282" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#E8983F">🎪 门利辛观景台 · 儿童乐园 · 巨型木马玩具</text>
+  <text x="108" y="298" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">四周雪山环绕 · 木栅栏+草地+雪山绝美出片</text>
+
+  <!-- Step 3 -->
+  <rect x="60" y="318" width="545" height="62" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1.5"/>
+  <circle cx="82" cy="349" r="15" fill="#5FA8D3"/>
+  <text x="82" y="355" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#FFFFFF">2</text>
+  <text x="108" y="340" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🥾 山脊徒步 → Kleine Scheidegg</text>
+  <text x="108" y="358" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">4.4km · 约2小时走走拍拍 · 大部分下坡 · 老少皆宜</text>
+  <text x="108" y="374" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">正面朝向少女峰·僧侣峰·艾格峰 · 五彩野花+蒂芙尼蓝小湖</text>
+
+  <!-- Step 4 -->
+  <rect x="60" y="388" width="545" height="42" rx="6" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1"/>
+  <circle cx="82" cy="409" r="15" fill="#5FA8D3"/>
+  <text x="82" y="415" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold" fill="#FFFFFF">3</text>
+  <text x="108" y="406" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#1B4965">🌈 客来雪德: 超美雪山湖 · 火车站与雪山同框</text>
+  <text x="108" y="422" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">餐厅+小吃 · 带干粮更佳 · 坐火车前往下一站</text>
+
+  <!-- Tips -->
+  <rect x="60" y="440" width="545" height="55" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="80" y="462" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">💡 徒步贴士</text>
+  <text x="80" y="478" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">👕 大部分下坡路 · 防晒帽+登山鞋 · 海拔约2000m注意防晒</text>
+  <text x="80" y="492" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">🍼 带干粮和水 · ⏰ 上午出发顺光拍雪山最佳</text>
+
+  <!-- ========= AFTERNOON BLOCK ========= -->
+  <rect x="645" y="145" width="595" height="365" rx="12" fill="#F0F4F8" stroke="#CBD5E0" stroke-width="1"/>
+  <rect x="645" y="145" width="595" height="42" rx="12" fill="#48BB78"/>
+  <rect x="645" y="168" width="595" height="18" fill="#48BB78"/>
+  <text x="665" y="170" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">🌤️ 下午: 无车小镇 + 游船 + 梦幻山坡</text>
+
+  <!-- Wengen -->
+  <rect x="665" y="200" width="555" height="75" rx="8" fill="#FFFFFF" stroke="#48BB78" stroke-width="1.5"/>
+  <rect x="665" y="200" width="40" height="75" rx="8" fill="#48BB78"/>
+  <text x="685" y="245" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#FFFFFF">A</text>
+  <text x="715" y="222" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">🚂 翁根 Wengen · 无车山村</text>
+  <text x="715" y="240" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">从客来雪德坐火车15min即达 · 悬崖上的童话小镇</text>
+  <text x="715" y="258" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">俯瞰劳特布伦嫩谷 · 只有行人+电瓶车 · 万格阳台观景台Allgmeinwissen</text>
+  <text x="715" y="272" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#E8983F">🎫 STP免费 · 建议停留30-60min</text>
+
+  <!-- Muerren -->
+  <rect x="665" y="285" width="555" height="75" rx="8" fill="#FFFFFF" stroke="#48BB78" stroke-width="1.5"/>
+  <rect x="665" y="285" width="40" height="75" rx="8" fill="#48BB78"/>
+  <text x="685" y="330" text-anchor="middle" font-family="Arial" font-size="18" font-weight="bold" fill="#FFFFFF">B</text>
+  <text x="715" y="307" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#1B4965">🏘️ 米伦 Mürren · 无车悬崖村 (可选)</text>
+  <text x="715" y="325" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">需从劳特布伦嫩换缆车+齿轮火车到达 · 正对少女峰三峰</text>
+  <text x="715" y="343" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">时间充裕可去 · 斯赫尼格普拉特缆车起点</text>
+  <text x="715" y="357" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#E8983F">🎫 STP免费 · 建议停留30-45min</text>
+
+  <!-- Dream slope -->
+  <rect x="665" y="370" width="265" height="68" rx="8" fill="#FFF8F0" stroke="#E8983F" stroke-width="1.5"/>
+  <text x="680" y="392" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#E8983F">🏔️ 梦幻山坡</text>
+  <text x="680" y="410" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">格林德瓦缓坡+木屋+雪山</text>
+  <text x="680" y="426" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">缆车上/回程火车上均可拍到</text>
+
+  <!-- Lake cruise -->
+  <rect x="950" y="370" width="270" height="68" rx="8" fill="#FFFFFF" stroke="#5FA8D3" stroke-width="1.5"/>
+  <text x="965" y="392" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" font-weight="bold" fill="#5FA8D3">🚢 图恩湖/布里恩茨湖游船</text>
+  <text x="965" y="410" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">STP免费 · 傍晚湖上赏日落</text>
+  <text x="965" y="426" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">因特拉肯东西两湖码头</text>
+
+  <!-- Tips afternoon -->
+  <rect x="665" y="448" width="555" height="47" rx="6" fill="#FFF8F0" stroke="#E8983F" stroke-width="1" stroke-opacity="0.3"/>
+  <text x="685" y="470" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">💡 下午安排建议</text>
+  <text x="685" y="486" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#718096">客来雪德→翁根(30-60min)→火车到劳特布伦嫩→自驾回因特拉肯→傍晚游船</text>
+
+  <!-- ========= DAY TIMELINE ========= -->
+  <rect x="40" y="525" width="1200" height="95" rx="12" fill="#1B4965"/>
+  <text x="60" y="550" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="15" font-weight="bold" fill="#FFFFFF">📅 全天时间轴</text>
+
+  <rect x="60" y="562" width="190" height="48" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="75" y="582" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#48BB78">8:30-9:00</text>
+  <text x="75" y="600" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0">缆车上山 · 拍梦幻山坡</text>
+
+  <rect x="260" y="562" width="250" height="48" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="275" y="582" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#5FA8D3">9:00-11:30</text>
+  <text x="275" y="600" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0">门利辛徒步→客来雪德(含拍照)</text>
+
+  <rect x="520" y="562" width="200" height="48" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="535" y="582" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#48BB78">11:30-13:00</text>
+  <text x="535" y="600" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0">客来雪德午餐+雪山湖拍照</text>
+
+  <rect x="730" y="562" width="200" height="48" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="745" y="582" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#5FA8D3">13:00-15:00</text>
+  <text x="745" y="600" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0">火车到翁根Wengen漫游</text>
+
+  <rect x="940" y="562" width="220" height="48" rx="6" fill="#FFFFFF" fill-opacity="0.1"/>
+  <text x="955" y="582" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" font-weight="bold" fill="#E8983F">15:30-18:00</text>
+  <text x="955" y="600" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" fill="#A0AEC0">回因特拉肯 · 傍晚湖上游船</text>
+
+  <!-- Drone status -->
+  <rect x="40" y="690" width="400" height="22" rx="4" fill="#FFF3CD"/>
+  <text x="55" y="706" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="11" font-weight="bold" fill="#856404">🚁 少女峰地区: ⚠️ 自然保护区限飞 · 限高150m · 查swisstopo</text>
+  <!-- Hotel bar -->
+  <rect x="40" y="635" width="1200" height="48" rx="8" fill="#5FA8D3"/>
+  <text x="60" y="660" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="14" font-weight="bold" fill="#FFFFFF">🏨 7/30 格林德瓦: Hotel Kirchbuehl Superior · 经济一卧室公寓(501/503) · ¥2,940</text>
+  <text x="1220" y="660" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="13" fill="#E8983F">Day 6 瑞士精华日 🏔️🚢</text>
+
+  <!-- footer -->
+  <text x="60" y="708" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">法意瑞家庭旅行 2026</text>
+  <text x="1220" y="708" text-anchor="end" font-family="'Microsoft YaHei', 'PingFang SC', Arial, sans-serif" font-size="12" fill="#A0AEC0">07 / 15</text>
+</svg>
