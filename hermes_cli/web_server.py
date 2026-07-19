@@ -61,6 +61,7 @@ from hermes_cli.config import (
     get_config_path,
     get_env_path,
     get_hermes_home,
+    get_process_hermes_home,
     load_config,
     load_env,
     read_raw_config,
@@ -587,7 +588,8 @@ async def auth_middleware(request: Request, call_next):
     if getattr(request.app.state, "auth_required", False):
         return await call_next(request)
     path = request.url.path
-    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
+    is_mcp_oauth_callback = path.startswith("/api/mcp/oauth/callback/")
+    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS and not is_mcp_oauth_callback:
         if not _has_valid_session_token(request) and not _has_valid_query_token(request, path):
             return JSONResponse(
                 status_code=401,
@@ -743,6 +745,10 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
             "Disable this on non-admin macOS accounts where /Applications is "
             "not writable."
         ),
+    },
+    "browser.headed": {
+        "type": "boolean",
+        "description": "Run the local browser in headed mode (visible window). Also keeps the window open between turns; idle sessions are still reaped after browser.inactivity_timeout.",
     },
 }
 
@@ -3282,12 +3288,20 @@ def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
 
     cmd = [_dashboard_spawn_executable(), "-m", "hermes_cli.main", *subcommand]
 
+    # The dashboard runs *inside* the gateway process, so os.environ carries
+    # _HERMES_GATEWAY=1. Inheriting it makes a spawned `hermes gateway restart`
+    # trip the in-process restart-loop guard and exit 1 — silently failing the
+    # dashboard's auto-restart paths. The gateway's own restart watcher already
+    # drops it (gateway/run.py); mirror that here (#52470).
+    action_env = {**os.environ, "HERMES_NONINTERACTIVE": "1"}
+    action_env.pop("_HERMES_GATEWAY", None)
+
     popen_kwargs: Dict[str, Any] = {
         "cwd": str(PROJECT_ROOT),
         "stdin": subprocess.DEVNULL,
         "stdout": log_file,
         "stderr": subprocess.STDOUT,
-        "env": {**os.environ, "HERMES_NONINTERACTIVE": "1"},
+        "env": action_env,
     }
     if sys.platform == "win32":
         popen_kwargs["creationflags"] = windows_detach_flags()
@@ -4248,6 +4262,139 @@ def get_profiles_sessions(
         "profile_totals": profile_totals,
         "limit": limit,
         "offset": offset,
+        "errors": errors,
+    }
+
+
+@app.get("/api/profiles/sessions/sidebar")
+def get_profiles_sessions_sidebar(
+    recents_profile: str = "all",
+    recents_limit: int = 20,
+    recents_exclude: str = None,
+    cron_limit: int = 50,
+    messaging_limit: int = 100,
+    messaging_exclude: str = None,
+):
+    """Batched sidebar session slices — one profile-DB open per refresh.
+
+    The desktop sidebar needs three source-scoped windows per refresh: recents
+    (local chats, scoped to the active profile), cron sessions (all profiles),
+    and messaging-platform sessions (all profiles). Served as three separate
+    ``/api/profiles/sessions`` calls they reopened every profile's ``state.db``
+    three times and re-counted each refresh. This opens each DB once and runs
+    the three filtered queries together, returning the three windows in one
+    payload. Read-only and process-light, same row projection and 300s active
+    heuristic as ``/api/profiles/sessions``.
+
+    The caller passes the source taxonomy (``recents_exclude`` /
+    ``messaging_exclude`` CSV, ``source=cron`` is implicit) so this stays
+    taxonomy-agnostic like the per-slice endpoint. All three slices use
+    ``min_messages=1`` / ``archived=exclude`` / recency order, matching the
+    desktop's per-slice calls.
+    """
+    from hermes_state import SessionDB
+    from hermes_cli import profiles as profiles_mod
+
+    # cron + messaging are cross-profile; recents is scoped to recents_profile.
+    # Scan every profile once regardless (each DB opened a single time).
+    try:
+        infos = profiles_mod.list_profiles()
+        targets: List[Tuple[str, Path]] = [(info.name, info.path) for info in infos]
+    except Exception:
+        _log.exception("GET /api/profiles/sessions/sidebar: list_profiles failed")
+        targets = []
+    if not targets:
+        targets.append(("default", profiles_mod.get_profile_dir("default")))
+
+    recents_scope = (recents_profile or "all").strip() or "all"
+    recents_exclude_list = [s for s in (recents_exclude or "").split(",") if s.strip()]
+    messaging_exclude_list = [s for s in (messaging_exclude or "").split(",") if s.strip()]
+
+    recents_cap = min(max(recents_limit, 1), 500)
+    cron_cap = min(max(cron_limit, 1), 500)
+    messaging_cap = min(max(messaging_limit, 1), 500)
+
+    recents_rows: List[Dict[str, Any]] = []
+    cron_rows: List[Dict[str, Any]] = []
+    messaging_rows: List[Dict[str, Any]] = []
+    recents_total = 0
+    recents_profile_totals: Dict[str, int] = {}
+    errors: List[Dict[str, str]] = []
+    now = time.time()
+
+    def _tag(rows: List[Dict[str, Any]], name: str) -> List[Dict[str, Any]]:
+        for s in rows:
+            s["profile"] = name
+            s["is_default_profile"] = name == "default"
+            s["is_active"] = (
+                s.get("ended_at") is None
+                and (now - s.get("last_active", s.get("started_at", 0))) < 300
+            )
+            s["archived"] = bool(s.get("archived"))
+        return rows
+
+    def _slice(db, *, source=None, exclude=None, cap):
+        return db.list_sessions_rich(
+            source=source,
+            exclude_sources=exclude or None,
+            limit=cap,
+            offset=0,
+            min_message_count=1,
+            include_archived=False,
+            archived_only=False,
+            order_by_last_active=True,
+            compact_rows=True,
+        )
+
+    for name, home in targets:
+        db_path = Path(home) / "state.db"
+        if not db_path.exists():
+            continue
+        try:
+            db = SessionDB(db_path=db_path, read_only=True)
+        except Exception as exc:
+            errors.append({"profile": name, "error": str(exc)})
+            continue
+        try:
+            if recents_scope == "all" or name == recents_scope:
+                recents_rows.extend(
+                    _tag(_slice(db, exclude=recents_exclude_list, cap=recents_cap), name)
+                )
+                rtotal = db.session_count(
+                    exclude_sources=recents_exclude_list or None,
+                    min_message_count=1,
+                    include_archived=False,
+                    archived_only=False,
+                    exclude_children=True,
+                )
+                recents_total += rtotal
+                recents_profile_totals[name] = rtotal
+            cron_rows.extend(_tag(_slice(db, source="cron", cap=cron_cap), name))
+            messaging_rows.extend(
+                _tag(_slice(db, exclude=messaging_exclude_list, cap=messaging_cap), name)
+            )
+        except Exception as exc:
+            errors.append({"profile": name, "error": str(exc)})
+        finally:
+            db.close()
+
+    def _window(rows: List[Dict[str, Any]], cap: int) -> List[Dict[str, Any]]:
+        rows.sort(key=lambda s: s.get("last_active") or s.get("started_at") or 0, reverse=True)
+        win = rows[:cap]
+        _strip_session_list_rows(win)
+        return win
+
+    return {
+        "recents": {
+            "sessions": _window(recents_rows, recents_cap),
+            "total": recents_total,
+            "profile_totals": recents_profile_totals,
+        },
+        "cron": {"sessions": _window(cron_rows, cron_cap)},
+        "messaging": {
+            "sessions": _window(messaging_rows, messaging_cap),
+            "total": len(messaging_rows),
+        },
         "errors": errors,
     }
 
@@ -11317,98 +11464,115 @@ async def test_mcp_server(name: str, profile: Optional[str] = None):
     }
 
 
-@app.post("/api/mcp/servers/{name}/auth")
-async def auth_mcp_server(name: str, profile: Optional[str] = None):
-    """Run the OAuth flow for an HTTP MCP server (opens the system browser).
+_MCP_DASHBOARD_OAUTH_TTL = 15 * 60
+_MAX_PENDING_MCP_OAUTH_FLOWS = 8
+_mcp_oauth_flows: dict[str, "DashboardOAuthFlow"] = {}
+_mcp_oauth_flows_lock = threading.Lock()
+_mcp_oauth_transactions: dict[tuple[str, str], threading.Lock] = {}
+_mcp_oauth_transactions_lock = threading.Lock()
 
-    Mirrors ``hermes mcp login``: wipe cached OAuth state so the probe forces
-    a fresh browser flow, connect, then verify a token actually landed on disk
-    (some providers serve tools/list unauthenticated — see
-    ``_reauth_oauth_server``).  Blocks until the browser flow completes, so it
-    runs in a worker thread.  ``auth: oauth`` is persisted only on success.
-    """
+
+def _gc_mcp_oauth_flows() -> None:
+    cutoff = time.time() - _MCP_DASHBOARD_OAUTH_TTL
+    with _mcp_oauth_flows_lock:
+        stale = [
+            flow_id
+            for flow_id, flow in _mcp_oauth_flows.items()
+            if getattr(flow, "created_at", 0) < cutoff
+        ]
+        for flow_id in stale:
+            _mcp_oauth_flows.pop(flow_id, None)
+
+
+def _mcp_oauth_callback_url_from_base(base_url: str, server_name: str) -> str:
+    from urllib.parse import quote
+
+    return f"{base_url.rstrip('/')}/api/mcp/oauth/callback/{quote(server_name, safe='')}"
+
+
+def _mcp_oauth_callback_url(request: Request, server_name: str) -> str:
+    """Build the externally reachable callback URL for a dashboard flow."""
+    from urllib.parse import urlparse, urlunparse
+
+    from hermes_cli.dashboard_auth.prefix import prefix_from_request, resolve_public_url
+
+    from urllib.parse import quote
+
+    suffix = f"/api/mcp/oauth/callback/{quote(server_name, safe='')}"
+    public_url = resolve_public_url()
+    if public_url:
+        return f"{public_url}{suffix}"
+    base = urlparse(str(request.base_url))
+    prefix = prefix_from_request(request)
+    return urlunparse(base._replace(path=f"{prefix}{suffix}", params="", query="", fragment=""))
+
+
+def _mcp_oauth_transaction(flow) -> threading.Lock:
+    key = (flow.hermes_home, flow.server_name)
+    with _mcp_oauth_transactions_lock:
+        return _mcp_oauth_transactions.setdefault(key, threading.Lock())
+
+
+def _run_dashboard_mcp_oauth(flow, cfg: dict) -> None:
+    """Run the normal MCP probe with dashboard redirect/callback handlers."""
     from hermes_cli.mcp_config import (
-        _get_mcp_servers,
         _oauth_tokens_present,
         _probe_single_server,
         _save_mcp_server,
     )
-
-    with _profile_scope(profile):
-        servers = _get_mcp_servers()
-    if name not in servers:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
-
-    cfg = dict(servers[name])
-    if not cfg.get("url"):
-        raise HTTPException(
-            status_code=400,
-            detail="stdio servers authenticate via env keys, not OAuth",
-        )
-    # A server carrying `headers` uses API-key/bearer auth; a 401 there is a bad
-    # key, not an OAuth prompt. Refuse rather than rewrite it to `auth: oauth`
-    # and corrupt a working header-auth config. (Explicit `auth: oauth` is fine.)
-    if cfg.get("headers") and cfg.get("auth") != "oauth":
-        raise HTTPException(
-            status_code=400,
-            detail="This server uses header/API-key auth, not OAuth — check its key.",
-        )
-    cfg["auth"] = "oauth"
-
-    def _run():
-        from tools.mcp_oauth import HermesTokenStorage, force_interactive_oauth
-
-        # Home-only scope, not _profile_scope: this blocks on the browser flow
-        # for up to minutes; holding the shared skills lock that whole time
-        # would freeze every other endpoint. Config writes here (_save_mcp_server)
-        # resolve HERMES_HOME via the contextvar override, which is all they need.
-        with _config_profile_scope(profile), force_interactive_oauth():
-            storage = HermesTokenStorage(name)
-            # Snapshot before clearing: a re-auth wipes cached state to force a
-            # fresh consent, but if the flow fails we must NOT leave the user
-            # worse off than before — restore the working token on any failure.
-            backup = storage.snapshot()
-            try:
-                from tools.mcp_oauth_manager import get_manager
-
-                get_manager().remove(name)
-            except Exception:
-                pass  # No cached state to clear — fine.
-            try:
-                # The default 30s connect timeout would kill the flow while the
-                # user is still on the consent screen — give the browser
-                # round-trip the full callback window (300s in mcp_oauth) plus
-                # headroom so the connect wrapper can't pre-empt it. Honor a
-                # larger configured connect_timeout when the user set one.
-                try:
-                    _cfg_timeout = float(cfg.get("connect_timeout", 0))
-                except (TypeError, ValueError):
-                    _cfg_timeout = 0.0
-                tools = _probe_single_server(
-                    name, cfg, connect_timeout=max(_cfg_timeout, 315)
-                )
-            except Exception:
-                storage.restore(backup)
-                raise
-            if not _oauth_tokens_present(name):
-                storage.restore(backup)
-                return {
-                    "ok": False,
-                    "error": (
-                        "The server responded, but no OAuth token was obtained — "
-                        "this provider may require a manually-registered OAuth "
-                        "client (see `hermes mcp login`)."
-                    ),
-                    "tools": [],
-                }
-            _save_mcp_server(name, cfg)
-            return {
-                "ok": True,
-                "tools": [{"name": t, "description": d} for t, d in tools],
-            }
-
     try:
-        return await asyncio.to_thread(_run)
+        from agent.secret_scope import (
+            build_profile_secret_scope,
+            reset_secret_scope,
+            set_secret_scope,
+        )
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        from tools.mcp_dashboard_oauth import dashboard_oauth_flow
+        from tools.mcp_oauth import HermesTokenStorage, force_interactive_oauth
+        from tools.mcp_oauth_manager import get_manager
+
+        home_token = set_hermes_home_override(flow.hermes_home)
+        secret_token = set_secret_scope(build_profile_secret_scope(Path(flow.hermes_home)))
+        try:
+            transaction = _mcp_oauth_transaction(flow)
+            with transaction, force_interactive_oauth(), dashboard_oauth_flow(flow):
+                manager = get_manager()
+                storage = HermesTokenStorage(flow.server_name)
+                backup = storage.snapshot()
+                previous_entry = None
+                try:
+                    previous_entry = manager.remove(
+                        flow.server_name,
+                        hermes_home=flow.hermes_home,
+                    )
+                    tools = _probe_single_server(
+                        flow.server_name,
+                        cfg,
+                        connect_timeout=max(float(cfg.get("connect_timeout", 0) or 0), 315),
+                    )
+                    if not _oauth_tokens_present(flow.server_name):
+                        raise RuntimeError(
+                            "The server responded, but no OAuth token was obtained — "
+                            "this provider may require a manually-registered OAuth client."
+                        )
+                    _save_mcp_server(flow.server_name, cfg)
+                    flow.tools = [{"name": t, "description": d} for t, d in tools]
+                    flow.mark_approved()
+                    if flow.reconnect_live:
+                        from tools.mcp_tool import reconnect_mcp_server
+
+                        reconnect_mcp_server(flow.server_name)
+                except Exception:
+                    storage.restore(backup, only_if_absent=True)
+                    manager.restore_entry(
+                        flow.server_name,
+                        previous_entry,
+                        hermes_home=flow.hermes_home,
+                    )
+                    raise
+        finally:
+            reset_secret_scope(secret_token)
+            reset_hermes_home_override(home_token)
     except Exception as exc:
         msg = str(exc)
         # Providers that gate RFC 7591 registration to pre-approved clients
@@ -11418,13 +11582,136 @@ async def auth_mcp_server(name: str, profile: Optional[str] = None):
         lowered = msg.lower()
         if "403" in msg and ("regist" in lowered or "forbidden" in lowered):
             msg = (
-                f"'{name}' only allows pre-approved OAuth clients — it rejected "
+                f"'{flow.server_name}' only allows pre-approved OAuth clients — it rejected "
                 "client registration (403), so no browser flow can start. "
                 "Options: add a pre-registered client to this server's entry "
                 "(oauth: {client_id: ..., client_secret: ...}), or use the "
                 "provider's stdio / API-key server instead."
             )
-        return {"ok": False, "error": msg, "tools": []}
+        flow.mark_error(msg)
+    finally:
+        flow.mark_worker_done()
+
+
+@app.post("/api/mcp/servers/{name}/auth")
+async def auth_mcp_server(name: str, request: Request, profile: Optional[str] = None):
+    """Start MCP OAuth and hand the authorization URL to the dashboard browser."""
+    from hermes_cli.mcp_config import _get_mcp_servers
+    from tools.mcp_dashboard_oauth import DashboardOAuthFlow
+
+    _require_token(request)
+    _gc_mcp_oauth_flows()
+    from hermes_constants import get_hermes_home
+
+    process_home = str(get_hermes_home().expanduser().resolve(strict=False))
+    with _profile_scope(profile):
+        servers = _get_mcp_servers()
+        flow_home = str(get_hermes_home().expanduser().resolve(strict=False))
+    if name not in servers:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    cfg = dict(servers[name])
+    if not cfg.get("url"):
+        raise HTTPException(status_code=400, detail="stdio servers authenticate via env keys, not OAuth")
+    if cfg.get("headers") and cfg.get("auth") != "oauth":
+        raise HTTPException(status_code=400, detail="This server uses header/API-key auth, not OAuth")
+    cfg["auth"] = "oauth"
+
+    flow_id = secrets.token_urlsafe(24)
+    flow = DashboardOAuthFlow(
+        flow_id=flow_id,
+        server_name=name,
+        profile=profile,
+        hermes_home=flow_home,
+        redirect_uri=(cfg.get("oauth") or {}).get("redirect_uri")
+        or _mcp_oauth_callback_url(request, name),
+        reconnect_live=flow_home == process_home,
+    )
+    with _mcp_oauth_flows_lock:
+        pending = sum(
+            not flow.worker_done
+            for flow in _mcp_oauth_flows.values()
+        )
+        if pending >= _MAX_PENDING_MCP_OAUTH_FLOWS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many MCP OAuth flows are already in progress",
+            )
+        if any(
+            flow.server_name == name
+            and flow.hermes_home == flow_home
+            and not flow.worker_done
+            for flow in _mcp_oauth_flows.values()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f"MCP OAuth for '{name}' is already in progress",
+            )
+        _mcp_oauth_flows[flow_id] = flow
+    threading.Thread(
+        target=_run_dashboard_mcp_oauth,
+        args=(flow, cfg),
+        daemon=True,
+        name=f"mcp-oauth-{name}",
+    ).start()
+    try:
+        await flow.wait_for_authorization_url(timeout=30)
+    except Exception as exc:
+        flow.mark_error(str(exc))
+    return flow.snapshot()
+
+
+@app.get("/api/mcp/oauth/flows/{flow_id}")
+async def mcp_oauth_flow_status(flow_id: str, request: Request):
+    _require_token(request)
+    _gc_mcp_oauth_flows()
+    flow = _mcp_oauth_flows.get(flow_id)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="OAuth flow not found or expired")
+    snapshot = flow.snapshot()
+    snapshot["tools"] = flow.tools
+    return snapshot
+
+
+@app.get("/api/mcp/oauth/callback/{server_name:path}")
+async def mcp_oauth_callback(
+    server_name: str,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    _gc_mcp_oauth_flows()
+    with _mcp_oauth_flows_lock:
+        candidates = [
+            flow
+            for flow in _mcp_oauth_flows.values()
+            if flow.server_name == server_name
+            and flow.status == "authorization_required"
+        ]
+    flow = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.expected_state is not None
+            and state is not None
+            and secrets.compare_digest(candidate.expected_state, state)
+        ),
+        None,
+    )
+    if flow is None:
+        return HTMLResponse("<h1>OAuth flow expired</h1><p>Return to Hermes and try again.</p>", status_code=404)
+    try:
+        flow.deliver_callback(code=code, state=state, error=error)
+    except ValueError as exc:
+        reason = str(exc)
+        status_code = 409 if "already received" in reason else 400
+        return HTMLResponse(
+            "<h1>OAuth callback rejected</h1>"
+            "<p>The callback was invalid or already used.</p>",
+            status_code=status_code,
+        )
+    if error:
+        return HTMLResponse("<h1>Authorization failed</h1><p>Return to Hermes for details.</p>", status_code=400)
+    return HTMLResponse("<h1>Authorization received</h1><p>You can close this tab and return to Hermes.</p>")
 
 
 class MCPEnabledToggle(BaseModel):
@@ -15197,7 +15484,7 @@ def _resolve_chat_argv(
     dashboard's in-memory gateway runs under the dashboard's own profile,
     so a profile-scoped chat must spawn its own gateway subprocess.
     """
-    from hermes_cli.main import PROJECT_ROOT, _make_tui_argv
+    from hermes_cli.main import PROJECT_ROOT, _apply_tui_python_env, _make_tui_argv
 
     profile_dir: Optional[Path] = None
     requested = (profile or "").strip()
@@ -15211,6 +15498,7 @@ def _resolve_chat_argv(
         apply_terminal_config_to_env(env=env)
     except Exception:
         _log.debug("Failed to apply terminal config bridge for dashboard chat", exc_info=True)
+    _apply_tui_python_env(env)
     env.setdefault("NODE_ENV", "production")
     # Browser-embedded chat should prefer stable wheel-based scrollback over
     # native terminal mouse tracking. When mouse tracking is enabled, wheel
@@ -15512,11 +15800,6 @@ def _get_console_executor() -> concurrent.futures.ThreadPoolExecutor:
     return _console_executor
 
 
-def _dashboard_console_context() -> str:
-    """Choose local vs hosted command policy for the dashboard console."""
-    return "hosted" if _default_hermes_root_is_opt_data() else "local"
-
-
 def _console_profile_from_ws(ws: WebSocket) -> Optional[str]:
     profile = (ws.query_params.get("profile") or "").strip()
     return profile or None
@@ -15723,16 +16006,12 @@ async def console_ws(ws: WebSocket) -> None:
     await ws.accept()
 
     profile = _console_profile_from_ws(ws)
-    context = _dashboard_console_context()
     send_lock = asyncio.Lock()
 
     try:
         from hermes_cli.console_engine import HermesConsoleEngine
 
-        engine = HermesConsoleEngine(
-            output_limit=_CONSOLE_OUTPUT_LIMIT,
-            context=context,  # type: ignore[arg-type]
-        )
+        engine = HermesConsoleEngine(output_limit=_CONSOLE_OUTPUT_LIMIT)
         if profile and profile.lower() != "current":
             _resolve_profile_dir(profile)
     except HTTPException as exc:
@@ -15762,11 +16041,10 @@ async def console_ws(ws: WebSocket) -> None:
         return
 
     _log.info(
-        "console accepted peer=%s mode=%s cred=%s context=%s profile=%s",
+        "console accepted peer=%s mode=%s cred=%s profile=%s",
         peer,
         mode,
         cred,
-        context,
         profile or "current",
     )
     await _console_send(
@@ -15774,7 +16052,6 @@ async def console_ws(ws: WebSocket) -> None:
         send_lock,
         {
             "type": "ready",
-            "context": context,
             "profile": profile or "current",
             "prompt": _CONSOLE_PROMPT,
         },
@@ -16797,8 +17074,12 @@ def _discover_user_themes() -> list:
     Returns a list of fully-normalised theme definitions ready to ship
     to the frontend, so the client can apply them without a secondary
     round-trip or a built-in stub.
+
+    Uses the dashboard process launch home, not ``get_hermes_home()``, so a
+    transient profile override from embedded chat does not hide themes that
+    live under the server's own ``HERMES_HOME``.
     """
-    themes_dir = get_hermes_home() / "dashboard-themes"
+    themes_dir = get_process_hermes_home() / "dashboard-themes"
     if not themes_dir.is_dir():
         return []
     result = []
@@ -16959,8 +17240,12 @@ def _discover_dashboard_plugins() -> list:
 
     from hermes_cli.plugins import get_bundled_plugins_dir
     bundled_root = get_bundled_plugins_dir()
+    # User dashboard plugins are a dashboard-owned asset (same category as
+    # theme YAML): resolve them from the process launch home so they don't
+    # vanish when a request is scoped to another profile via a context-local
+    # HERMES_HOME override (e.g. embedded /chat under --open-profile).
     search_dirs = [
-        (get_hermes_home() / "plugins", "user"),
+        (get_process_hermes_home() / "plugins", "user"),
         (bundled_root / "memory", "bundled"),
         (bundled_root, "bundled"),
     ]
@@ -17768,6 +18053,32 @@ def start_server(
                 "There is no unauthenticated public-bind option — to keep it "
                 "local, bind 127.0.0.1 and tunnel in (SSH / Tailscale)."
             )
+            # Hint when credentials exist but the bundled provider is blocked
+            # (#54489).
+            try:
+                from hermes_cli.config import load_config as _load_cfg
+                from hermes_cli.plugins_cmd import _BASIC_AUTH_PLUGIN_KEYS
+
+                _cfg = _load_cfg()
+                _ba = (_cfg.get("dashboard") or {}).get("basic_auth") or {}
+                _disabled = (_cfg.get("plugins") or {}).get("disabled") or []
+                # Basic auth only activates with a username AND a credential
+                # (plaintext password or password_hash); don't fire the hint on
+                # a half-configured block.
+                _has_creds = bool(_ba.get("username")) and bool(
+                    _ba.get("password_hash") or _ba.get("password")
+                )
+                if _has_creds and (set(_disabled) & _BASIC_AUTH_PLUGIN_KEYS):
+                    _fix_hint = (
+                        "The 'basic' dashboard-auth plugin is in "
+                        "plugins.disabled but dashboard.basic_auth is "
+                        "configured.\n"
+                        "Remove 'basic' from plugins.disabled (or run "
+                        "`hermes plugins enable basic`), then restart the "
+                        "dashboard.\n\n"
+                    ) + _fix_hint
+            except Exception:
+                pass
             if skip_reasons:
                 raise SystemExit(
                     f"Refusing to bind dashboard to {host} — the auth gate "
