@@ -28,19 +28,22 @@ guarantee.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
-from typing import Sequence
+from typing import Mapping, Sequence
 
 __all__ = [
     "IS_WINDOWS",
     "resolve_node_command",
+    "suppress_platform_ver_console",
     "windows_detach_flags",
     "windows_detach_flags_without_breakaway",
     "windows_hide_flags",
     "windows_detach_popen_kwargs",
     "bounded_git_probe",
+    "noninteractive_git_env",
 ]
 
 
@@ -226,6 +229,43 @@ def windows_hide_flags() -> int:
     return _CREATE_NO_WINDOW
 
 
+def suppress_platform_ver_console() -> None:
+    """Stub out ``platform._syscmd_ver`` on Windows so it can never flash a
+    console window.  No-op on non-Windows.
+
+    CPython's ``platform.win32_ver()`` — reached by ``platform.uname()``,
+    ``platform.version()``, and ``platform.platform()`` — unconditionally
+    shells out ``cmd /c ver`` via ``subprocess.check_output(..., shell=True)``
+    with no ``CREATE_NO_WINDOW``.  From a windowless parent (the pythonw
+    gateway and every kanban worker it spawns) that allocates a fresh
+    *visible* console: one flashing ``cmd`` window per process, triggered by
+    any dependency that merely touches ``platform.uname()`` at import time.
+
+    With ``_syscmd_ver`` stubbed to return its inputs, ``win32_ver()`` hits
+    the documented ``ValueError`` fallback and reads the version from
+    ``sys.getwindowsversion().platform_version`` — same information, queried
+    in-process, no subprocess, no window.  Verified equivalent on
+    CPython 3.11 (``platform()`` → ``Windows-10-10.0.xxxxx-SP0`` either way).
+
+    Call early, before heavyweight imports — the flash typically happens
+    during a dependency's import, not from Hermes' own code.
+    """
+    if not IS_WINDOWS:
+        return
+    try:
+        import platform
+
+        if hasattr(platform, "_syscmd_ver"):
+            def _quiet_syscmd_ver(system="", release="", version="",
+                                  supported_platforms=("win32", "win16", "dos")):
+                return system, release, version
+
+            platform._syscmd_ver = _quiet_syscmd_ver
+    except Exception:
+        # Purely cosmetic hardening — never let it break startup.
+        pass
+
+
 def windows_detach_popen_kwargs() -> dict:
     """Return a dict of Popen kwargs that detach a child on Windows and
     fall back to the POSIX equivalent (``start_new_session=True``) on
@@ -260,18 +300,71 @@ def windows_detach_popen_kwargs() -> dict:
 
 
 # -----------------------------------------------------------------------------
+# Non-interactive git environment (credential-prompt hang guard)
+# -----------------------------------------------------------------------------
+
+
+def noninteractive_git_env(
+    base: "Mapping[str, str] | None" = None,
+) -> dict[str, str]:
+    """Environment for *internal* git invocations that must never prompt.
+
+    Hermes shells out to git from many non-interactive contexts — MCP catalog
+    installs, plugin install/update, profile distribution staging, worktree
+    base fetches, desktop review-pane fetch/push. When the remote is private,
+    misconfigured, or requires auth, git's default behavior is to prompt on
+    the inherited terminal (or via an askpass helper), which silently hangs
+    the operation until its timeout — or forever at call sites without one.
+    Ported from openai/codex#34540 / #34612 ("detach non-interactive
+    subprocesses from stdin"): a background tool invocation must fail fast
+    with a readable error, not wait for input nobody can type.
+
+    Returns a copy of ``base`` (default ``os.environ``) with:
+
+    * ``GIT_TERMINAL_PROMPT=0`` — git fails with "terminal prompts disabled"
+      instead of prompting for credentials.
+    * ``GCM_INTERACTIVE=Never`` — Git Credential Manager (the default
+      credential helper on Windows installs) never pops its own dialog.
+
+    ``GIT_ASKPASS`` / ``SSH_ASKPASS`` are deliberately left alone: when the
+    user has a *working* askpass helper or ssh-agent configured, auth should
+    still succeed non-interactively. The env only disables paths that block
+    on a human.
+
+    Pair with ``stdin=subprocess.DEVNULL`` so git (and any credential helper
+    it spawns) also can't read the parent's inherited stdin.
+
+    This is for internal plumbing calls only — the agent-facing terminal tool
+    has its own policy layer and user-visible PTY, where prompting can be
+    legitimate.
+    """
+    env = dict(base if base is not None else os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "Never"
+    return env
+
+
+# -----------------------------------------------------------------------------
 # Bounded, fail-open git probing (Windows post-kill deadlock guard)
 # -----------------------------------------------------------------------------
 
 
 def _kill_git_process_tree(proc: "subprocess.Popen") -> None:
-    """Best-effort terminate *proc* and, on Windows, its descendants.
+    """Best-effort terminate *proc* and its descendants on both platforms.
 
-    ``proc.kill()`` alone only terminates the PATH-resolved ``git`` launcher; a
+    ``proc.kill()`` alone only terminates the direct child. On Windows a
     suspended descendant ``git.exe`` can survive holding duplicates of the
     captured pipe handles, which keeps the pipes from reaching EOF and leaks two
-    reader threads + the process per fired timeout. ``taskkill /T /F`` takes the
+    reader threads + the process per fired timeout — ``taskkill /T /F`` takes the
     whole tree down so the bounded drain that follows can actually reach EOF.
+    On POSIX the same class exists: killing the launcher leaves descendants
+    (credential helpers, ``git-remote-https``, hook children) running and
+    holding the pipe write ends. The probe is spawned in its own process group
+    (``process_group=0`` in :func:`bounded_git_probe`), so when — and only
+    when — the child leads its own group (``pgid == pid``), the entire group is
+    signalled with ``os.killpg``. The ownership check means a fallback spawn
+    that shares our group can never cause us to kill unrelated processes.
+    Ported from openai/codex#36793 ("Terminate timed-out Git process trees").
 
     All failures are swallowed — this is cleanup on an already-failing path, and
     the caller's contract is to fail open. ``kill()`` can raise (access denied,
@@ -280,6 +373,17 @@ def _kill_git_process_tree(proc: "subprocess.Popen") -> None:
     re-enter the deadlock class it fixes: it captures no pipes (DEVNULL), so its
     own timeout cleanup has no reader threads to join.
     """
+    if not IS_WINDOWS:
+        # Group-kill first: verify the child actually leads its own process
+        # group before signalling it, so we never blast a shared group.
+        try:
+            import signal as _signal
+
+            pgid = os.getpgid(proc.pid)
+            if pgid == proc.pid:
+                os.killpg(pgid, _signal.SIGKILL)  # windows-footgun: ok — inside `if not IS_WINDOWS` gate
+        except Exception:
+            pass
     try:
         proc.kill()
     except OSError:
@@ -323,9 +427,15 @@ def bounded_git_probe(argv: Sequence[str], *, timeout: float) -> str:
 
     The normal-path spawn contract mirrors the previous ``run`` call byte-for-byte:
     PIPE/PIPE/DEVNULL, ``text`` with UTF-8 ``errors="replace"`` decoding, and the
-    hidden-window ``creationflags`` on Windows only.
+    hidden-window ``creationflags`` on Windows only. On POSIX the probe is
+    additionally placed in its own process group (``process_group=0``,
+    Python ≥3.11) so timeout cleanup can take down descendants — credential
+    helpers, ``git-remote-https``, hook children — with the launcher instead of
+    orphaning them (see :func:`_kill_git_process_tree`; port of
+    openai/codex#36793). ``process_group`` only changes which group the child
+    belongs to; it does not detach the terminal or alter the fast path.
     """
-    _popen_kwargs = {"creationflags": windows_hide_flags()} if IS_WINDOWS else {}
+    _popen_kwargs: dict = {"creationflags": windows_hide_flags()} if IS_WINDOWS else {"process_group": 0}
     try:
         proc = subprocess.Popen(
             list(argv),

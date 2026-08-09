@@ -431,6 +431,11 @@ class HomeChannel:
     chat_id: str
     name: str  # Human-readable name for display
     thread_id: Optional[str] = None
+    # Authenticated logical-target provenance observed by a platform adapter.
+    # Relay egress re-attaches these values, but the connector remains the
+    # authorization boundary and resolves them against its authoritative stores.
+    user_id: Optional[str] = None
+    scope_id: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -440,6 +445,10 @@ class HomeChannel:
         }
         if self.thread_id:
             result["thread_id"] = self.thread_id
+        if self.user_id:
+            result["user_id"] = self.user_id
+        if self.scope_id:
+            result["scope_id"] = self.scope_id
         return result
     
     @classmethod
@@ -449,7 +458,28 @@ class HomeChannel:
             chat_id=str(data["chat_id"]),
             name=data.get("name", "Home"),
             thread_id=str(data["thread_id"]) if data.get("thread_id") else None,
+            user_id=str(data["user_id"]) if data.get("user_id") else None,
+            scope_id=str(data["scope_id"]) if data.get("scope_id") else None,
         )
+
+
+def persist_home_channel(home: HomeChannel, *, enabled_if_new: bool = False) -> None:
+    """Persist a logical home without falsely enabling a Relay-fronted adapter."""
+    from hermes_cli.config import load_config, save_config
+
+    config = load_config()
+    platforms = config.setdefault("platforms", {})
+    if not isinstance(platforms, dict):
+        platforms = {}
+        config["platforms"] = platforms
+    platform_config = platforms.setdefault(home.platform.value, {})
+    if not isinstance(platform_config, dict):
+        platform_config = {}
+        platforms[home.platform.value] = platform_config
+    if enabled_if_new:
+        platform_config.setdefault("enabled", True)
+    platform_config["home_channel"] = home.to_dict()
+    save_config(config)
 
 
 @dataclass
@@ -900,6 +930,13 @@ class GatewayConfig:
     # disables sd_notify at runtime.
     systemd_watchdog_seconds: int = 0
 
+    # In-process event-loop liveness watchdog (#69089). A daemon OS thread
+    # probes the gateway loop with call_soon_threadsafe; after consecutive
+    # missed probes it dumps all-thread stacks and hard-exits with the
+    # service-restart code so the supervisor can revive the process. On by
+    # default; set gateway.loop_watchdog: false in config.yaml to disable.
+    loop_watchdog: bool = True
+
     # Unauthorized DM policy
     unauthorized_dm_behavior: str = "pair"  # "pair" or "ignore"
 
@@ -1034,6 +1071,7 @@ class GatewayConfig:
             "max_concurrent_sessions": self.max_concurrent_sessions,
             "multiplex_profiles": self.multiplex_profiles,
             "systemd_watchdog_seconds": self.systemd_watchdog_seconds,
+            "loop_watchdog": self.loop_watchdog,
             "unauthorized_dm_behavior": self.unauthorized_dm_behavior,
             "streaming": self.streaming.to_dict(),
             "session_store_max_age_days": self.session_store_max_age_days,
@@ -1105,6 +1143,11 @@ class GatewayConfig:
         systemd_watchdog_seconds = coerce_systemd_watchdog_seconds(
             systemd_watchdog_raw, systemd_watchdog_key
         )
+        if "loop_watchdog" in data:
+            loop_watchdog_raw = data.get("loop_watchdog")
+        else:
+            loop_watchdog_raw = nested_gateway.get("loop_watchdog")
+        loop_watchdog = _coerce_bool(loop_watchdog_raw, True)
         if multiplex_profiles is None and isinstance(nested_gateway, dict):
             # Also honor gateway.multiplex_profiles written by
             # ``hermes config set gateway.multiplex_profiles true``.
@@ -1165,6 +1208,7 @@ class GatewayConfig:
             thread_sessions_per_user=_coerce_bool(thread_sessions_per_user, False),
             multiplex_profiles=_coerce_bool(multiplex_profiles, False),
             systemd_watchdog_seconds=systemd_watchdog_seconds,
+            loop_watchdog=loop_watchdog,
             max_concurrent_sessions=max_concurrent_sessions,
             unauthorized_dm_behavior=unauthorized_dm_behavior,
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
@@ -1506,6 +1550,8 @@ def load_gateway_config() -> GatewayConfig:
                     bridged["cron_continuable_surface"] = platform_cfg["cron_continuable_surface"]
                 if "require_mention" in platform_cfg:
                     bridged["require_mention"] = platform_cfg["require_mention"]
+                if "send_read_receipts" in platform_cfg:
+                    bridged["send_read_receipts"] = platform_cfg["send_read_receipts"]
                 if plat == Platform.TELEGRAM and "allowed_chats" in platform_cfg:
                     bridged["allowed_chats"] = platform_cfg["allowed_chats"]
                 if plat == Platform.TELEGRAM and "group_allowed_chats" in platform_cfg:
@@ -1942,12 +1988,20 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         # send Slack messages can use it without activating the gateway adapter.
         config.platforms[Platform.SLACK].token = slack_token
     slack_home = getenv("SLACK_HOME_CHANNEL")
-    if slack_home and Platform.SLACK in config.platforms:
-        config.platforms[Platform.SLACK].home_channel = HomeChannel(
+    if slack_home:
+        slack_config = config.platforms.setdefault(
+            Platform.SLACK,
+            PlatformConfig(enabled=False),
+        )
+        existing_home = slack_config.home_channel
+        same_home = existing_home is not None and existing_home.chat_id == slack_home
+        slack_config.home_channel = HomeChannel(
             platform=Platform.SLACK,
             chat_id=slack_home,
             name=getenv("SLACK_HOME_CHANNEL_NAME", ""),
             thread_id=getenv("SLACK_HOME_CHANNEL_THREAD_ID") or None,
+            user_id=existing_home.user_id if existing_home and same_home else None,
+            scope_id=existing_home.scope_id if existing_home and same_home else None,
         )
     
     # Signal
@@ -2074,7 +2128,6 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         )
 
     # API Server
-    api_server_enabled = is_truthy_value(getenv("API_SERVER_ENABLED", ""))
     api_server_key = getenv("API_SERVER_KEY", "")
     api_server_cors_origins = getenv("API_SERVER_CORS_ORIGINS", "")
     api_server_port = getenv("API_SERVER_PORT")
@@ -2269,7 +2322,10 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
             "agent_id": getenv("WECOM_CALLBACK_AGENT_ID", ""),
             "token": getenv("WECOM_CALLBACK_TOKEN", ""),
             "encoding_aes_key": getenv("WECOM_CALLBACK_ENCODING_AES_KEY", ""),
-            "host": getenv("WECOM_CALLBACK_HOST", "0.0.0.0"),
+            # No default here: an unset WECOM_CALLBACK_HOST leaves extra.host
+            # falsy so the adapter's dual-stack DEFAULT_HOST=None applies
+            # (binds IPv4 + IPv6; "0.0.0.0" was IPv4-only, NS-603).
+            "host": getenv("WECOM_CALLBACK_HOST", ""),
             "port": getenv_int("WECOM_CALLBACK_PORT", 8645),
         })
 
@@ -2456,23 +2512,23 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
             pass
 
     # Registry-driven enable for plugin platforms.  Built-ins have explicit
-    # blocks above; plugins expose check_fn() which is the single source of
-    # truth for "are my env vars set?".  When it returns True, ensure the
-    # platform is enabled so start() will create its adapter.  Plugins that
-    # need to seed ``PlatformConfig.extra`` from env vars (e.g. Google Chat's
+    # blocks above.  A plugin platform is enabled when its credentials are
+    # configured (``is_connected``) and its dependencies are either present
+    # (passive ``check_fn``) or installable on demand (``ensure_deps_fn``,
+    # run later by ``create_adapter()`` — never here).  Plugins that need to
+    # seed ``PlatformConfig.extra`` from env vars (e.g. Google Chat's
     # project_id / subscription_name) can supply ``env_enablement_fn`` on
     # their PlatformEntry — called here BEFORE adapter construction.
     #
     # Enablement gate (#31116): when a plugin registers ``is_connected``
     # (the "has the user actually configured credentials for this?" check),
     # we MUST consult it before flipping ``enabled = True``.  Otherwise
-    # ``check_fn`` alone — which for adapter plugins typically just
-    # verifies the SDK is importable / lazy-installs it — silently enables
-    # platforms the user never opted into, and the gateway then tries to
-    # connect to Discord / Teams / Google Chat with no token and emits
-    # noisy retry-forever errors.  ``_platform_status`` was already fixed
-    # for the same bug class in commit 7849a3d73; this is the runtime
-    # counterpart.
+    # ``check_fn`` alone — a passive "is the SDK importable?" probe —
+    # silently enables platforms the user never opted into, and the gateway
+    # then tries to connect to Discord / Teams / Google Chat with no token
+    # and emits noisy retry-forever errors.  ``_platform_status`` was
+    # already fixed for the same bug class in commit 7849a3d73; this is the
+    # runtime counterpart.
     try:
         from hermes_cli.plugins import discover_plugins
         discover_plugins()  # idempotent
@@ -2567,20 +2623,25 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
                         )
                         continue
             # Verify dependencies LAST — only for platforms that are already
-            # enabled or passed the credential gate above.  For adapter plugins
-            # ``check_fn`` lazy-INSTALLS the platform SDK (pip) as a side
-            # effect, so running it as an unconditional sweep over every
-            # registered platform made ``load_gateway_config()`` pip-install
-            # Discord/Telegram/Slack/Feishu/Dingtalk on every call — including
-            # the desktop/dashboard readiness probe (``GET /api/status``, which
-            # awaits this synchronously) — even when the user configured none
-            # of them.  That blocked startup until every install finished and
-            # caused the desktop app to time out and boot-loop (stuck at 94%).
+            # enabled or passed the credential gate above.  ``check_fn`` is a
+            # PASSIVE probe (never installs); a platform whose deps are
+            # missing but which registered ``ensure_deps_fn`` still gets
+            # enabled here — the registry's ``create_adapter()`` runs the
+            # active installer at gateway start, when the user actually
+            # wants the platform up.  Historically the ACTIVE installer was
+            # wired as ``check_fn`` and this sweep pip-installed
+            # Discord/Telegram/Slack/Feishu/Dingtalk SDKs on every
+            # ``load_gateway_config()`` call — including the desktop/dashboard
+            # readiness probe (``GET /api/status``) — blocking startup until
+            # every install finished and boot-looping the desktop app at 94%.
+            # The check_fn/ensure_deps_fn split (#79812) makes that
+            # impossible by construction.
             try:
-                if not entry.check_fn():
-                    continue
+                deps_ok = bool(entry.check_fn())
             except Exception as e:
                 logger.debug("check_fn for %s raised: %s", entry.name, e)
+                deps_ok = False
+            if not deps_ok and entry.ensure_deps_fn is None:
                 continue
             if platform not in config.platforms:
                 config.platforms[platform] = PlatformConfig()
