@@ -326,6 +326,7 @@ export interface Translations {
         search: string
         noMatches: string
         toggleFailed: (name: string) => string
+        updateBackendToManage: string
         sources: Record<string, string>
       }
     }
@@ -1564,6 +1565,7 @@ export interface Translations {
     noWorkspace: string
     projectEmpty: string
     noSessions: string
+    noFilterMatches: string
     projects: {
       sectionLabel: string
       home: string
@@ -1658,6 +1660,7 @@ export interface Translations {
       waitingForAnswer: string
       finishedUnread: string
       backgroundRunning: string
+      draftSession: string
       handoffOrigin: (platform: string) => string
       ownedByProfile: (profile: string) => string
       renamed: string
@@ -1677,6 +1680,10 @@ export interface Translations {
       thisWeek: string
       lastWeek: string
       thisMonth: string
+    }
+    statusDivider: {
+      working: string
+      done: string
     }
   }
 
