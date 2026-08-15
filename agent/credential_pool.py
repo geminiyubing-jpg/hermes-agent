@@ -120,6 +120,7 @@ SUPPORTED_POOL_STRATEGIES = {
 # Cooldown before retrying an exhausted credential.
 # Transient 401 auth failures cool down briefly so single-key setups can recover.
 # 429 (rate-limited), 402 (billing/quota), and other failures cool down after 1 hour.
+# Server-side overload sub-codes (e.g. 1305/1306/1307) recover faster (3 min).
 # Provider-supplied reset_at timestamps override these defaults.
 EXHAUSTED_TTL_401_SECONDS = 5 * 60           # 5 minutes
 EXHAUSTED_TTL_429_SECONDS = 60 * 60          # 1 hour
@@ -157,6 +158,12 @@ FAILURE_REASON_BILLING_UNVERIFIED = "billing_unverified"
 # signal while removing the storm — same class of fix as the warn-once
 # dedup in #58265.
 NO_AVAILABLE_ENTRIES_LOG_THROTTLE_SECONDS = 60.0
+
+# Server-side overload errors (not user quota) recover much faster.
+# These are provider-specific sub-codes carried in the response body,
+# not the HTTP status code itself.
+_SERVER_OVERLOAD_CODES = frozenset({"1305", "1306", "1307", "1312", "500"})
+EXHAUSTED_TTL_SERVER_OVERLOAD_SECONDS = 3 * 60  # 3 minutes
 
 # Pool key prefix for custom OpenAI-compatible endpoints.
 # Custom endpoints all share provider='custom' but are keyed by their
@@ -318,6 +325,7 @@ def _is_manual_source(source: str) -> bool:
 def _exhausted_ttl(
     error_code: Optional[int],
     *,
+    error_reason: Optional[str] = None,
     sole_credential: bool = False,
     failure_reason: Optional[str] = None,
 ) -> int:
@@ -336,9 +344,18 @@ def _exhausted_ttl(
     on a spent account just re-fails every minute. Billing keeps the full
     bench regardless of status; 402 does too, since it is billing by
     definition even when nothing classified it.
+
+    *error_reason* carries provider sub-codes from the response body (e.g.
+    ZAI's 1305/1302) and allows finer-grained cooldowns: server-side overload
+    sub-codes (1305/1306/1307/500) recover in minutes, so they get the short
+    overload TTL instead of the full bench.
     """
     if error_code == 401:
         return EXHAUSTED_TTL_401_SECONDS
+    # Provider-reported server overload (not user quota): short cooldown so
+    # the credential returns once the provider recovers.
+    if error_reason and str(error_reason) in _SERVER_OVERLOAD_CODES:
+        return EXHAUSTED_TTL_SERVER_OVERLOAD_SECONDS
     base = EXHAUSTED_TTL_429_SECONDS if error_code == 429 else EXHAUSTED_TTL_DEFAULT_SECONDS
     # Unverified billing (#82154): the same 400 body can be a content-filter
     # rejection of the request itself, in which case the credential is healthy
@@ -446,6 +463,7 @@ def _exhausted_until(entry: PooledCredential, *, sole_credential: bool = False) 
     if entry.last_status_at:
         return entry.last_status_at + _exhausted_ttl(
             entry.last_error_code,
+            error_reason=entry.last_error_reason,
             sole_credential=sole_credential,
             failure_reason=getattr(entry, "failure_reason", None),
         )
