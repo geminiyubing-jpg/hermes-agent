@@ -1740,7 +1740,9 @@ def _classify_by_message(
     # e.g. some Anthropic-compatible proxies) classifies as a transient
     # overload (backoff + retry) instead of falling through to `unknown` or
     # incorrectly triggering credential rotation.
-    if any(p in error_msg for p in _OVERLOADED_PATTERNS):
+    if any(p in error_msg for p in _OVERLOADED_PATTERNS) or any(
+        p in error_msg for p in _SERVER_OVERLOAD_PATTERNS
+    ):
         return result_fn(
             FailoverReason.overloaded,
             retryable=True,
