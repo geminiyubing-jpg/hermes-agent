@@ -22,6 +22,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import uuid
 from typing import Optional
 from hermes_cli.config import cfg_get
 
@@ -49,6 +50,16 @@ _approval_turn_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 _approval_tool_call_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "approval_tool_call_id",
+    default="",
+)
+# Hermes session id (observability identity, distinct from the gateway
+# routing session_key above). Approval hooks forward it so observer
+# plugins can attach approval marks to the REAL session scope — without
+# it they fall back to a synthetic "default" session whose scope never
+# closes, and close-time exporters never ship the marks (staging defect
+# 2026-08-10: approvals invisible on the audit board).
+_approval_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "approval_session_id",
     default="",
 )
 
@@ -113,6 +124,12 @@ def _fire_approval_hook(hook_name: str, **kwargs) -> None:
     try:
         kwargs.setdefault("turn_id", _approval_turn_id.get())
         kwargs.setdefault("tool_call_id", _approval_tool_call_id.get())
+        # Forward the Hermes session id so observer plugins parent approval
+        # marks to the real session scope instead of a synthetic "default"
+        # session (whose scope never closes → marks never export).
+        _session_id = _approval_session_id.get()
+        if _session_id:
+            kwargs.setdefault("session_id", _session_id)
         invoke_hook(hook_name, **kwargs)
     except Exception as exc:
         # invoke_hook() already swallows per-callback errors, so reaching here
@@ -183,19 +200,26 @@ def set_current_observability_context(
     *,
     turn_id: str = "",
     tool_call_id: str = "",
-) -> tuple[contextvars.Token[str], contextvars.Token[str]]:
+    session_id: str = "",
+) -> tuple[
+    contextvars.Token[str], contextvars.Token[str], contextvars.Token[str]
+]:
     """Bind active tool correlation IDs to approval hooks."""
     return (
         _approval_turn_id.set(turn_id or ""),
         _approval_tool_call_id.set(tool_call_id or ""),
+        _approval_session_id.set(session_id or ""),
     )
 
 
 def reset_current_observability_context(
-    tokens: tuple[contextvars.Token[str], contextvars.Token[str]],
+    tokens: tuple[
+        contextvars.Token[str], contextvars.Token[str], contextvars.Token[str]
+    ],
 ) -> None:
     """Restore prior approval hook correlation IDs."""
-    turn_token, tool_token = tokens
+    turn_token, tool_token, session_token = tokens
+    _approval_session_id.reset(session_token)
     _approval_tool_call_id.reset(tool_token)
     _approval_turn_id.reset(turn_token)
 
@@ -260,6 +284,38 @@ def _is_gateway_approval_context() -> bool:
     if env_var_enabled("HERMES_GATEWAY_SESSION"):
         return True
     return bool(_get_session_platform())
+
+
+def _resolve_cli_approval_callback(approval_callback=None):
+    """Return an interactive CLI approval callback when one is available.
+
+    Prefers an explicitly passed callback, then the per-thread CLI callback
+    registered via ``tools.terminal_tool.set_approval_callback``.
+    """
+    if approval_callback is not None:
+        return approval_callback
+    try:
+        from tools.terminal_tool import _get_approval_callback
+        return _get_approval_callback()
+    except Exception:
+        return None
+
+
+def _should_fall_through_to_cli_approval(
+    *,
+    is_cli: bool,
+    approval_callback,
+    notify_cb,
+) -> bool:
+    """Prefer the classic CLI Dangerous Command panel over silent pending.
+
+    ``HERMES_EXEC_ASK`` (and sometimes a session platform marker) can leak into
+    an interactive CLI process — most commonly via ``import gateway.run``, which
+    historically set ask-mode as a module-level side effect. Without a gateway
+    notify listener, the ask/gateway branch used to return ``pending_approval``
+    immediately and skip the CLI panel the user can actually answer.
+    """
+    return bool(is_cli and approval_callback is not None and notify_cb is None)
 
 # Sensitive write targets that should trigger approval even when referenced
 # via shell expansions like $HOME or $HERMES_HOME, or by the resolved absolute
@@ -2507,11 +2563,13 @@ def _denial_breaker_addendum(session_key: str) -> str:
 
 class _ApprovalEntry:
     """One pending dangerous-command approval inside a gateway session."""
-    __slots__ = ("event", "data", "result", "reason")
+    __slots__ = ("event", "data", "result", "reason", "acknowledged")
 
     def __init__(self, data: dict):
         self.event = threading.Event()
-        self.data = data          # command, description, pattern_keys, …
+        self.data = dict(data)
+        self.data.setdefault("request_id", uuid.uuid4().hex)
+        self.acknowledged = False
         self.result: Optional[str] = None  # "once"|"session"|"always"|"deny"
         # Optional free-text reason supplied with an explicit deny
         # (``/deny <reason>``) so the agent can adapt instead of only
@@ -2550,7 +2608,8 @@ def unregister_gateway_notify(session_key: str) -> None:
 
 def resolve_gateway_approval(session_key: str, choice: str,
                              resolve_all: bool = False,
-                             reason: Optional[str] = None) -> int:
+                             reason: Optional[str] = None,
+                             request_id: Optional[str] = None) -> int:
     """Called by the gateway's /approve or /deny handler to unblock
     waiting agent thread(s).
 
@@ -2568,7 +2627,12 @@ def resolve_gateway_approval(session_key: str, choice: str,
         queue = _gateway_queues.get(session_key)
         if not queue:
             return 0
-        if resolve_all:
+        if request_id:
+            targets = [entry for entry in queue if entry.data.get("request_id") == request_id]
+            if not targets:
+                return 0
+            queue[:] = [entry for entry in queue if entry not in targets]
+        elif resolve_all:
             targets = list(queue)
             queue.clear()
         else:
@@ -2584,10 +2648,42 @@ def resolve_gateway_approval(session_key: str, choice: str,
     return len(targets)
 
 
+def list_gateway_approvals(session_key: str) -> list[dict]:
+    """Return replay-safe snapshots of unresolved approvals for one session."""
+    with _lock:
+        return [dict(entry.data) for entry in _gateway_queues.get(session_key, [])]
+
+
+def ack_gateway_approval(session_key: str, request_id: str) -> bool:
+    """Record that a client received a particular pending approval request."""
+    with _lock:
+        for entry in _gateway_queues.get(session_key, []):
+            if entry.data.get("request_id") == request_id:
+                entry.acknowledged = True
+                return True
+    return False
+
+
 def has_blocking_approval(session_key: str) -> bool:
     """Check if a session has one or more blocking gateway approvals waiting."""
     with _lock:
         return bool(_gateway_queues.get(session_key))
+
+
+def get_pending_gateway_approval(session_key: str) -> dict | None:
+    """Return a copy of the oldest unresolved gateway approval for a session.
+
+    Reconnectable clients use this to restore an approval prompt whose original
+    notification was sent while their transport was detached.  The queue remains
+    authoritative: this is a read-only snapshot, not a claim on the approval.
+    """
+    if not session_key:
+        return None
+    with _lock:
+        queue = _gateway_queues.get(session_key)
+        if not queue:
+            return None
+        return dict(queue[0].data)
 
 
 def submit_pending(session_key: str, approval: dict):
@@ -3270,12 +3366,7 @@ def _run_approval_gate(
     if is_approved(session_key, pattern_key):
         return {"approved": True, "message": None}
 
-    if approval_callback is None:
-        try:
-            from tools.terminal_tool import _get_approval_callback
-            approval_callback = _get_approval_callback()
-        except Exception:
-            approval_callback = None
+    approval_callback = _resolve_cli_approval_callback(approval_callback)
 
     is_cli = _is_interactive_cli()
     is_gateway = _is_gateway_approval_context()
@@ -3384,24 +3475,32 @@ def _run_approval_gate(
                 save_permanent_allowlist(_permanent_approved)
             return {"approved": True, "message": None}
 
-        # No notify callback (e.g. API server without an attached chat):
-        # queue for /approve /deny review, agent sees approval_required.
-        submit_pending(session_key, {
-            "command": display_target,
-            "pattern_key": pattern_key,
-            "description": description,
-        })
-        return {
-            "approved": False,
-            "pattern_key": pattern_key,
-            "status": "approval_required",
-            "command": display_target,
-            "description": description,
-            "message": (
-                f"⚠️ This action is potentially dangerous ({description}). "
-                f"Asking the user for approval.\n\n**Target:**\n```\n{display_target}\n```"
-            ),
-        }
+        # No notify callback: interactive CLI with a panel callback should
+        # still prompt locally instead of queuing a pending approval nobody
+        # can see (HERMES_EXEC_ASK / platform-marker leaks into CLI).
+        if not _should_fall_through_to_cli_approval(
+            is_cli=is_cli,
+            approval_callback=approval_callback,
+            notify_cb=notify_cb,
+        ):
+            # No notify callback (e.g. API server without an attached chat):
+            # queue for /approve /deny review, agent sees approval_required.
+            submit_pending(session_key, {
+                "command": display_target,
+                "pattern_key": pattern_key,
+                "description": description,
+            })
+            return {
+                "approved": False,
+                "pattern_key": pattern_key,
+                "status": "approval_required",
+                "command": display_target,
+                "description": description,
+                "message": (
+                    f"⚠️ This action is potentially dangerous ({description}). "
+                    f"Asking the user for approval.\n\n**Target:**\n```\n{display_target}\n```"
+                ),
+            }
 
     _fire_approval_hook(
         "pre_approval_request",
@@ -3666,6 +3765,166 @@ def _format_tirith_description(tirith_result: dict) -> str:
     return "Security scan — " + "; ".join(parts)
 
 
+def get_plugin_manager():
+    """Lazy plugin-manager seam used by tests and early tool-only imports."""
+    from hermes_cli.plugins import discover_plugins, get_plugin_manager as _get_manager
+
+    # Approval can be imported before model_tools, whose import normally
+    # triggers general plugin discovery. Ensure an explicitly selected
+    # transport is available on that first approval rather than treating the
+    # still-undiscovered registry as an unavailable transport.
+    discover_plugins()
+    return _get_manager()
+
+
+def _get_approval_transport_config() -> tuple[str, str | None]:
+    """Return explicitly selected transport and fail-closed fallback mode."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        config = load_config_readonly() or {}
+        approval_config = ((config.get("security") or {}).get("approval") or {})
+        selected = str(approval_config.get("transport") or "builtin").strip().lower()
+        fallback = str(approval_config.get("transport_fallback") or "").strip().lower()
+    except Exception:
+        # An unreadable/malformed selection must not silently materialize a
+        # prompt on a built-in surface the operator may not be watching.
+        return "config-error", None
+    return selected or "builtin", "builtin" if fallback == "builtin" else None
+
+
+def _present_with_selected_transport(
+    *,
+    command: str,
+    description: str,
+    pattern_key: str,
+    pattern_keys: list[str],
+    session_key: str,
+    surface: str,
+    allow_session: bool,
+    allow_permanent: bool,
+) -> dict:
+    """Present through an explicitly selected plugin transport, if any."""
+    name, fallback = _get_approval_transport_config()
+    if name == "builtin":
+        return {"selected": False}
+
+    try:
+        registered = get_plugin_manager().get_approval_transport(name)
+    except Exception:
+        # Plugin/discovery exception text may contain plugin-owned secrets.
+        logger.warning("Could not resolve selected approval transport %r", name)
+        registered = None
+    if registered is None:
+        logger.warning("Selected approval transport %r is unavailable", name)
+        return {
+            "selected": True,
+            "choice": "deny",
+            "failure": "unavailable",
+            "fallback": fallback,
+            "name": name,
+        }
+
+    try:
+        from agent.redact import redact_sensitive_text
+        from hermes_cli.approval_transport import ApprovalRequest, invoke_approval_transport
+
+        timeout_seconds = _get_approval_timeout()
+        request = ApprovalRequest.create(
+            command=redact_sensitive_text(command, force=True),
+            description=redact_sensitive_text(description, force=True),
+            pattern_key=pattern_key,
+            pattern_keys=tuple(pattern_keys),
+            session_key=session_key,
+            surface=surface,
+            allow_session=allow_session,
+            allow_permanent=allow_permanent,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception:
+        # Never fall back to raw text if redaction or request construction
+        # fails. The selected boundary exists, so fail closed without calling
+        # the plugin or leaking the unredacted payload to logs/hooks.
+        logger.warning("Could not build redacted plugin approval request")
+        return {
+            "selected": True,
+            "choice": "deny",
+            "failure": "error",
+            "fallback": None,
+            "name": name,
+        }
+    hook_surface = f"transport:{name}"
+    _fire_approval_hook(
+        "pre_approval_request",
+        command=request.command,
+        description=request.description,
+        pattern_key=pattern_key,
+        pattern_keys=list(pattern_keys),
+        session_key=session_key,
+        surface=hook_surface,
+        request_id=request.request_id,
+        request_digest=request.digest,
+    )
+    try:
+        from tools.environments.base import touch_activity_if_due
+    except Exception:  # pragma: no cover - minimal tool-only environments
+        touch_activity_if_due = None
+    now = time.monotonic()
+    activity_state = {"last_touch": now, "start": now}
+
+    def _poll() -> None:
+        if touch_activity_if_due is not None:
+            touch_activity_if_due(activity_state, "waiting for plugin approval transport")
+
+    with human_wait_window(session_key):
+        result = invoke_approval_transport(
+            registered.present,
+            request,
+            timeout_seconds=timeout_seconds,
+            on_poll=_poll,
+            is_interrupted=is_interrupted,
+        )
+    hook_choice = result.choice if result.failure is None else f"transport_{result.failure}"
+    _fire_approval_hook(
+        "post_approval_response",
+        command=request.command,
+        description=request.description,
+        pattern_key=pattern_key,
+        pattern_keys=list(pattern_keys),
+        session_key=session_key,
+        surface=hook_surface,
+        choice=hook_choice,
+        request_id=request.request_id,
+        request_digest=request.digest,
+    )
+    return {
+        "selected": True,
+        "choice": result.choice,
+        "failure": result.failure,
+        "fallback": fallback,
+        "name": name,
+    }
+
+
+def _transport_denied_result(
+    *, pattern_key: str, description: str, failure: str
+) -> dict:
+    breaker_addendum = _denial_breaker_addendum(get_current_session_key())
+    return {
+        "approved": False,
+        "message": (
+            f"BLOCKED: Selected approval transport failed ({failure}); the user "
+            "has NOT consented to this action. Do NOT retry this command or "
+            "attempt the same outcome through another route."
+            f"{breaker_addendum}"
+        ),
+        "pattern_key": pattern_key,
+        "description": description,
+        "outcome": f"transport_{failure}",
+        "user_consent": False,
+    }
+
+
 def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
                             *, surface: str = "gateway") -> dict:
     """Enqueue *approval_data*, notify the user, and block the calling agent
@@ -3712,7 +3971,7 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
 
     # Notify the user (bridges sync agent thread → async gateway)
     try:
-        notify_cb(approval_data)
+        notify_cb(dict(entry.data))
     except Exception as exc:
         logger.warning("Gateway approval notify failed: %s", exc)
         _drop_entry()
@@ -3853,6 +4112,7 @@ def check_all_command_guards(command: str, env_type: str,
     if _command_matches_permanent_allowlist(command):
         return {"approved": True, "message": None}
 
+    approval_callback = _resolve_cli_approval_callback(approval_callback)
     is_cli = _is_interactive_cli()
     is_gateway = _is_gateway_approval_context()
     is_ask = env_var_enabled("HERMES_EXEC_ASK")
@@ -4060,6 +4320,70 @@ def check_all_command_guards(command: str, env_type: str,
     # session — the UI was stricter than the persistence layer.
     has_permanent_capable = any(not is_t for _, _, is_t in warnings)
 
+    # An explicitly selected plugin transport replaces every built-in prompt
+    # surface (CLI/TUI/gateway/ACP). Detection, allowed scopes, persistence,
+    # timeout, and final authorization remain host-owned. A failed transport
+    # reaches a built-in surface only under the explicit fallback opt-in.
+    transport_attempt = _present_with_selected_transport(
+        command=command,
+        description=combined_desc,
+        pattern_key=primary_key,
+        pattern_keys=all_keys,
+        session_key=session_key,
+        surface="gateway" if (is_gateway or is_ask) else "cli",
+        allow_session=not smart_denied_for_owner,
+        allow_permanent=has_permanent_capable and not smart_denied_for_owner,
+    )
+    if transport_attempt.get("selected"):
+        transport_failure = transport_attempt.get("failure")
+        if transport_failure and transport_attempt.get("fallback") == "builtin":
+            logger.warning(
+                "Approval transport %r failed (%s); using explicit builtin fallback",
+                transport_attempt.get("name"),
+                transport_failure,
+            )
+        elif transport_failure:
+            return _transport_denied_result(
+                pattern_key=primary_key,
+                description=combined_desc,
+                failure=transport_failure,
+            )
+        else:
+            transport_choice = transport_attempt.get("choice")
+            if transport_choice == "deny":
+                _record_denial(session_key)
+                breaker_addendum = _denial_breaker_addendum(session_key)
+                return {
+                    "approved": False,
+                    "message": (
+                        "BLOCKED: User denied this command through the selected "
+                        "approval transport. The user has NOT consented to this "
+                        "action. Do NOT retry or attempt the same outcome through "
+                        f"another route.{breaker_addendum}"
+                    ),
+                    "pattern_key": primary_key,
+                    "description": combined_desc,
+                    "outcome": "denied",
+                    "user_consent": False,
+                }
+            if not smart_denied_for_owner:
+                for key, _, is_tirith in warnings:
+                    if transport_choice == "session" or (
+                        transport_choice == "always" and is_tirith
+                    ):
+                        approve_session(session_key, key)
+                    elif transport_choice == "always":
+                        approve_session(session_key, key)
+                        approve_permanent(key)
+                        save_permanent_allowlist(_permanent_approved)
+            _reset_denials(session_key)
+            return {
+                "approved": True,
+                "message": None,
+                "user_approved": True,
+                "description": combined_desc,
+            }
+
     # Gateway/async approval — block the agent thread until the user
     # responds with /approve or /deny, mirroring the CLI's synchronous
     # input() flow.  The agent never sees "approval_required"; it either
@@ -4172,35 +4496,44 @@ def check_all_command_guards(command: str, env_type: str,
                     "user_approved": True, "description": combined_desc}
 
         # Fallback: no gateway callback registered (e.g. cron, batch).
-        # Return approval_required for backward compat. Redact secrets in the
-        # user-facing copy — the raw `command` is preserved for execution and
-        # the allowlist keys off pattern_key, so redaction is display-only.
-        from agent.redact import redact_sensitive_text
-        _disp_command = redact_sensitive_text(command)
-        _disp_combined_desc = redact_sensitive_text(combined_desc)
-        pending_data = {
-            "command": _disp_command,
-            "pattern_key": primary_key,
-            "pattern_keys": all_keys,
-            "description": _disp_combined_desc,
-        }
-        if smart_denied_for_owner:
-            pending_data.update(smart_denied=True, allow_permanent=False)
-        submit_pending(session_key, pending_data)
-        result = {
-            "approved": False,
-            "pattern_key": primary_key,
-            "status": "pending_approval",
-            "approval_pending": True,
-            "command": _disp_command,
-            "description": _disp_combined_desc,
-            "message": (
-                f"⚠️ {_disp_combined_desc}. Asking the user for approval.\n\n**Command:**\n```\n{_disp_command}\n```"
-            ),
-        }
-        if smart_denied_for_owner:
-            result.update(smart_denied=True, allow_permanent=False)
-        return result
+        # Interactive CLI with a Dangerous Command callback should still
+        # paint the local panel — ask-mode often leaks into CLI via
+        # importing gateway.run, and returning pending_approval here makes
+        # the agent look "auto-blocked" with no Approve/Deny UI.
+        if not _should_fall_through_to_cli_approval(
+            is_cli=is_cli,
+            approval_callback=approval_callback,
+            notify_cb=notify_cb,
+        ):
+            # Return approval_required for backward compat. Redact secrets in the
+            # user-facing copy — the raw `command` is preserved for execution and
+            # the allowlist keys off pattern_key, so redaction is display-only.
+            from agent.redact import redact_sensitive_text
+            _disp_command = redact_sensitive_text(command)
+            _disp_combined_desc = redact_sensitive_text(combined_desc)
+            pending_data = {
+                "command": _disp_command,
+                "pattern_key": primary_key,
+                "pattern_keys": all_keys,
+                "description": _disp_combined_desc,
+            }
+            if smart_denied_for_owner:
+                pending_data.update(smart_denied=True, allow_permanent=False)
+            submit_pending(session_key, pending_data)
+            result = {
+                "approved": False,
+                "pattern_key": primary_key,
+                "status": "pending_approval",
+                "approval_pending": True,
+                "command": _disp_command,
+                "description": _disp_combined_desc,
+                "message": (
+                    f"⚠️ {_disp_combined_desc}. Asking the user for approval.\n\n**Command:**\n```\n{_disp_command}\n```"
+                ),
+            }
+            if smart_denied_for_owner:
+                result.update(smart_denied=True, allow_permanent=False)
+            return result
 
     # CLI interactive: single combined prompt
     # Hide [a]lways when no persistable (non-tirith) warning is present
@@ -4355,6 +4688,10 @@ def check_execute_code_guard(code: str, env_type: str,
     #     (context now propagates into the RPC thread, #33057); a whole-script
     #     prompt would fire on every execute_code call.
     #   * Local non-interactive non-gateway: documented limitation above.
+    # Ask-mode (HERMES_EXEC_ASK) still takes this path even when INTERACTIVE
+    # is also set — that combination is how gateway/smart tests and messaging
+    # ask-mode drive whole-script approval. Terminal-command CLI leaks are
+    # handled in check_all_command_guards via the CLI callback fall-through.
     if not is_gateway and not is_ask:
         return {"approved": True, "message": None}
 
@@ -4422,6 +4759,60 @@ def check_execute_code_guard(code: str, env_type: str,
     display_command = redact_sensitive_text(command)
     display_code = redact_sensitive_text(code)
     display_description = redact_sensitive_text(description)
+
+    transport_attempt = _present_with_selected_transport(
+        command=command,
+        description=description,
+        pattern_key=pattern_key,
+        pattern_keys=[pattern_key],
+        session_key=session_key,
+        surface="gateway",
+        allow_session=not smart_denied_for_owner,
+        allow_permanent=not smart_denied_for_owner,
+    )
+    if transport_attempt.get("selected"):
+        transport_failure = transport_attempt.get("failure")
+        if transport_failure and transport_attempt.get("fallback") == "builtin":
+            logger.warning(
+                "Approval transport %r failed (%s); using explicit builtin fallback",
+                transport_attempt.get("name"),
+                transport_failure,
+            )
+        elif transport_failure:
+            return _transport_denied_result(
+                pattern_key=pattern_key,
+                description=description,
+                failure=transport_failure,
+            )
+        else:
+            choice = transport_attempt.get("choice")
+            if choice == "deny":
+                _record_denial(session_key)
+                return {
+                    "approved": False,
+                    "message": (
+                        "BLOCKED: User denied execute_code through the selected "
+                        "approval transport. The user has NOT consented."
+                    ),
+                    "pattern_key": pattern_key,
+                    "description": description,
+                    "outcome": "denied",
+                    "user_consent": False,
+                }
+            if not smart_denied_for_owner:
+                if choice == "session":
+                    approve_session(session_key, pattern_key)
+                elif choice == "always":
+                    approve_session(session_key, pattern_key)
+                    approve_permanent(pattern_key)
+                    save_permanent_allowlist(_permanent_approved)
+            _reset_denials(session_key)
+            return {
+                "approved": True,
+                "message": None,
+                "user_approved": True,
+                "description": description,
+            }
 
     notify_cb = None
     with _lock:
