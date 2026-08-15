@@ -4387,7 +4387,11 @@ def _gateway_run_command() -> list[str]:
     profile_arg = _profile_arg()
     if profile_arg:
         cmd.extend(profile_arg.split())
-    cmd.extend(["gateway", "run", "--replace"])
+    # The stderr_timestamp wrapper re-execs the gateway via Popen, which resets
+    # launchd's XPC_SERVICE_NAME to "0" in the child. Declare the external
+    # supervisor explicitly so `_guard_supervised_gateway_conflict` doesn't
+    # kill the service's own gateway in a respawn loop.
+    cmd.extend(["gateway", "run", "--replace", "--external-supervisor"])
     return cmd
 
 
