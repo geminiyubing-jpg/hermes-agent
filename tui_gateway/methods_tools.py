@@ -1178,12 +1178,26 @@ def _(rid, params: dict) -> dict:
 
     try:
         from agent.skill_commands import get_skill_commands
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 
-        _cmd_key = f"/{_cmd_base}"
-        if _cmd_key in get_skill_commands():
-            return _err(
-                rid, 4018, f"skill command: use command.dispatch for {_cmd_key}"
-            )
+        # Re-bind HERMES_HOME to the session's profile so get_skill_commands()
+        # sees that profile's skills.external_dirs rather than whatever the
+        # process-level env happens to carry (#88023): dispatch() runs this
+        # handler on the pool with a copied context, and nothing upstream of
+        # here binds the override for slash.exec.
+        _profile_home = session.get("profile_home")
+        _home_token = (
+            set_hermes_home_override(_profile_home) if _profile_home else None
+        )
+        try:
+            _cmd_key = f"/{_cmd_base}"
+            if _cmd_key in get_skill_commands():
+                return _err(
+                    rid, 4018, f"skill command: use command.dispatch for {_cmd_key}"
+                )
+        finally:
+            if _home_token is not None:
+                reset_hermes_home_override(_home_token)
     except Exception:
         pass
 
@@ -1685,15 +1699,19 @@ def _(rid, params: dict) -> dict:
         if action == "list":
             # Paused jobs are excluded by default, which reads as deletion in
             # any UI with an enable/disable toggle — forward the flag.
-            return _ok(
-                rid,
-                json.loads(
-                    cronjob(
-                        action="list",
-                        include_disabled=is_truthy_value(params.get("include_disabled", False)),
-                    )
-                ),
+            result = json.loads(
+                cronjob(
+                    action="list",
+                    include_disabled=is_truthy_value(params.get("include_disabled", False)),
+                )
             )
+            # This marker proves the gateway honored the optional profile
+            # scope. New clients may therefore treat every returned job as
+            # owned by that profile; older gateways omit it, preserving the
+            # safe [bot:<name>] compatibility filter.
+            if profile:
+                result["scoped"] = profile
+            return _ok(rid, result)
         if action == "add":
             return _ok(
                 rid,
@@ -1709,6 +1727,14 @@ def _(rid, params: dict) -> dict:
                         repeat=(
                             int(params["repeat"])
                             if str(params.get("repeat", "")).strip().isdigit()
+                            else None
+                        ),
+                        # Optional continuity toggle: the job's own previous
+                        # output is injected into each run (stored as the
+                        # reserved "self" entry in context_from).
+                        continuity=(
+                            is_truthy_value(params.get("continuity"))
+                            if params.get("continuity") is not None
                             else None
                         ),
                     )
@@ -2362,8 +2388,15 @@ def _(rid, params: dict) -> dict:
                        status, portable}], "user_count": N, "bundled_count": M}
       - ``toggle`` → flip ``key`` (or ``name``) based on ``enable`` (bool).
                        Returns the refreshed row plus {"ok", "unchanged"}.
+
+    Accepts an optional ``profile`` param (same contract as mcp.servers.*):
+    plugins live under each profile's HERMES_HOME, so a client can list or
+    toggle another profile's plugins without switching the whole app.
     """
     action = params.get("action", "list")
+    token, err = _mcp_resolve_profile(rid, params)
+    if err:
+        return err
     try:
         from hermes_cli.plugins_cmd import (
             _bundled_default_on,
@@ -2450,6 +2483,8 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4017, f"unknown plugins action: {action}")
     except Exception as e:
         return _err(rid, 5026, str(e))
+    finally:
+        _mcp_reset_profile(token)
 
 
 @method("shell.exec")

@@ -410,7 +410,7 @@ def _install_method_project_root(project_root: Optional[Path] = None) -> Path:
 
 
 def detect_install_method(project_root: Optional[Path] = None) -> str:
-    """Detect how Hermes was installed: 'docker', 'nix', 'nixos', 'git', or 'unknown'.
+    """Detect how Hermes was installed: 'apt', 'docker', 'nix', 'nixos', 'git', or 'unknown'.
 
     Resolution order:
     1. Code-scoped stamp ``<install tree>/.install_method`` (next to the
@@ -454,7 +454,11 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
     See issue #34397.
     """
     root = _install_method_project_root(project_root)
-    supported_methods = {"docker", "nix", "nixos", "git", "unknown"}
+    # "apt" is intentionally the Termux APT distribution identifier, not a
+    # generic Debian/Ubuntu APT signal. If another APT-managed distribution is
+    # added, give it a distinct install method or make update-command selection
+    # platform-aware instead of silently reusing Termux's `pkg` command.
+    supported_methods = {"apt", "docker", "nix", "nixos", "git", "unknown"}
 
     # 1. Code-scoped stamp — authoritative, immune to shared $HERMES_HOME.
     try:
@@ -548,6 +552,10 @@ def recommended_update_command_for_method(method: str) -> str:
         return _NIX_UPDATE_MSG
     if method == "docker":
         return "docker pull nousresearch/hermes-agent:latest"
+    if method == "apt":
+        # By contract, the current "apt" install method is the Termux APT
+        # distribution. It deliberately uses Termux's `pkg` frontend.
+        return "pkg upgrade hermes-agent"
     return "hermes update"
 
 
@@ -5003,8 +5011,8 @@ def warn_unpinned_cron_jobs_after_model_config_change(
         f"{snapshot_field} values that differ from the new global {axis}. "
         "They will fail closed on their next run instead of silently using the "
         "changed model/provider. Inspect with `hermes cron list`, then pin the "
-        "intended values with `cronjob action=update job_id=<job_id> "
-        "provider=<provider> model=<model>`."
+        "intended values with `hermes cron edit <job_id> --provider <provider> "
+        "--model <model>`."
     )
 
 
@@ -5202,6 +5210,41 @@ def _validate_config_key(key: str) -> tuple[bool, Optional[str]]:
     return True, None
 
 
+def _looks_structured_value(value: str) -> bool:
+    """Return True when *value* plausibly encodes a YAML/JSON list or mapping.
+
+    Used by :func:`set_config_value` to decide whether to attempt a
+    ``yaml.safe_load`` structured parse. Deliberately conservative so plain
+    scalars are never mangled:
+
+    - Flow style: the value starts with ``[`` or ``{`` (JSON is a YAML
+      subset, so both ``'["a","b"]'`` and ``'{a: 1}'`` qualify).
+    - Block style: the value spans multiple lines AND at least one line is
+      shaped like a YAML sequence item (``- item``) or mapping entry
+      (``key: value``).
+
+    A bare leading ``-`` is NOT a trigger on its own: ``-5``, ``--flag`` and
+    other dash-prefixed single-line scalars must remain strings.
+    """
+    stripped = value.lstrip()
+    if stripped[:1] in ('[', '{'):
+        return True
+    if '\n' not in value:
+        return False
+    for line in value.splitlines():
+        item = line.strip()
+        if item == '-' or item.startswith('- '):
+            return True
+        # ``key: value`` / ``key:`` mapping-entry shape (no whitespace in the
+        # key, colon followed by a space or end-of-line).
+        head, sep, _rest = item.partition(': ')
+        if sep and head and ' ' not in head and not head.startswith('#'):
+            return True
+        if item.endswith(':') and ' ' not in item[:-1] and item[:-1]:
+            return True
+    return False
+
+
 def set_config_value(key: str, value: str, force: bool = False):
     """Set a configuration value.
 
@@ -5292,6 +5335,38 @@ def set_config_value(key: str, value: str, force: bool = False):
             coerced_value = int(value)
         elif value.replace('.', '', 1).isdigit():
             coerced_value = float(value)
+        elif _looks_structured_value(value):
+            # List/mapping literals -- e.g.
+            #   hermes config set platform_toolsets.line '["file","web"]'
+            # or a multi-line YAML block:
+            #   hermes config set custom_providers '- name: foo
+            #     base_url: https://...'
+            # Without this, such values were stored as a raw STRING, and every
+            # reader that gates on isinstance(..., list) (``_get_platform_tools``,
+            # ``_get_enabled_set``, ...) silently ignored them and fell back to
+            # its default -- the setting looked saved but never took effect.
+            # Folded INSIDE the string-typed guard so a genuinely string-typed
+            # setting whose value merely starts with '[' or '{' is left intact
+            # (preserves the guard added in e4ea0a0ed).  The trigger is
+            # deliberately conservative (see _looks_structured_value): plain
+            # scalars like '-5' or '--flag' never reach the YAML parser.
+            try:
+                parsed = yaml.safe_load(value)
+                if isinstance(parsed, (list, dict)):
+                    coerced_value = parsed
+                else:
+                    print(
+                        f"Warning: value for '{key}' looks like a list/mapping but "
+                        f"parsed as {type(parsed).__name__}; storing as string.",
+                        file=sys.stderr,
+                    )
+            except yaml.YAMLError:
+                print(
+                    f"Warning: value for '{key}' looks like a list/mapping but is "
+                    f"not valid YAML/JSON; storing as string. Most isinstance-gated "
+                    f"readers will ignore a string here.",
+                    file=sys.stderr,
+                )
 
     value = coerced_value
     # Normalize a scalar ``model`` key before writing sub-keys so that

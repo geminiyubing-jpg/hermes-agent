@@ -990,6 +990,13 @@ _cli_wake_owner = None
 # the session boundary while the agent is still attached. If a signal lands in
 # that narrow window, atexit cleanup must not emit that session finalization again.
 _single_query_finalize_attempted_session_ids: set[str | None] = set()
+# Session IDs that were handed off to the gateway via /handoff.  The CLI
+# process exits after a successful handoff, but the gateway now owns the
+# session lifecycle — _run_cleanup must NOT call finalize_session on these,
+# because doing so sets end_reason on a row the gateway just reopened and is
+# actively writing to (#88234).  The race made the handoff leg vanish from
+# session history and broke session_search recall for the handed-off session.
+_handed_off_session_ids: set[str | None] = set()
 # Weak reference to the active AIAgent for memory provider shutdown at exit
 _active_agent_ref = None
 _deferred_agent_startup_done = False
@@ -1279,11 +1286,19 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
 
 
 def _should_emit_cleanup_session_finalize(session_id: str | None) -> bool:
+    # A session that was handed off to the gateway is now owned by the
+    # gateway process.  The CLI must not finalize it on exit — that sets
+    # end_reason on a row the gateway reopened and is actively writing
+    # to, causing the handoff leg to vanish from session history (#88234).
+    if session_id is not None and session_id in _handed_off_session_ids:
+        return False
     if not _single_query_finalize_attempted_session_ids:
         return True
     if session_id is None:
         return False
-    return session_id not in _single_query_finalize_attempted_session_ids
+    if session_id in _single_query_finalize_attempted_session_ids:
+        return False
+    return True
 
 
 def _notify_session_finalize(
@@ -1315,6 +1330,10 @@ def _emit_interrupted_session_end(cli, *, reason: str = "keyboard_interrupt") ->
         pass
 
     session_id = getattr(agent, "session_id", None) or getattr(cli, "session_id", None)
+    # Don't emit session-end for a session that was handed off to the
+    # gateway — the gateway owns the lifecycle now (#88234).
+    if session_id in _handed_off_session_ids:
+        return
     if session_id:
         try:
             cli.session_id = session_id
@@ -1344,6 +1363,10 @@ def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> N
     session_id = getattr(agent, "session_id", None) or getattr(cli, "session_id", None)
     if session_id in _single_query_finalize_attempted_session_ids:
         return
+    # Don't finalize a session that was handed off to the gateway —
+    # the gateway owns the lifecycle now (#88234).
+    if session_id in _handed_off_session_ids:
+        return
 
     try:
         _notify_session_finalize(
@@ -1355,9 +1378,74 @@ def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> N
         _single_query_finalize_attempted_session_ids.add(session_id)
 
 
+def _flush_one_shot_session_store(cli) -> None:
+    """Durably flush + finalize the one-shot session row before process exit.
+
+    The quiet/one-shot ``-q`` / ``-Q`` paths (including resume-or-create of a
+    titled session via ``-c <name> --create-if-missing``, the Bot Mode
+    bot-to-bot send) get exactly ONE turn and then exit. The interactive CLI
+    finalizes its session row on quit (``end_session(..., "cli_close")``) and
+    every later turn retries a transiently-failed transcript flush; the
+    one-shot path had neither, so:
+
+    - a turn whose in-loop ``_flush_messages_to_session_db`` failed under
+      write-lock contention (e.g. a busy multiplex gateway sharing state.db)
+      was silently lost — the reply reached stdout and agent.log but the
+      resumed session's stored history never changed (#88583);
+    - the resumed/created titled session row was left dangling open
+      (``ended_at``/``end_reason`` NULL) on every one-shot exit;
+    - queued async token-accounting deltas relied on interpreter-exit hooks,
+      which the kanban SIGTERM path's ``os._exit(0)`` skips entirely.
+
+    Idempotent and best-effort: ``_persist_session`` dedupes via the
+    per-message ``_DB_PERSISTED_MARKER`` stamps (already-written turns are
+    not re-written) and ``end_session`` no-ops on an already-ended row.
+    Sessions handed off to the gateway are owned by the gateway process and
+    are left strictly alone (#88234).
+    """
+    agent = getattr(cli, "agent", None)
+    if agent is None:
+        return
+    session_id = getattr(agent, "session_id", None) or getattr(cli, "session_id", None)
+    if not session_id or session_id in _handed_off_session_ids:
+        return
+    if getattr(agent, "_persist_disabled", False):
+        return
+    # Retry persistence for any rows the in-turn flush failed to write.
+    # ``cli.conversation_history`` holds the resumed history's live dicts, so
+    # passing it keeps restored messages identity-skipped even when the failed
+    # first flush never got to stamp them.
+    try:
+        msgs = getattr(agent, "_session_messages", None)
+        if isinstance(msgs, list) and msgs and hasattr(agent, "_persist_session"):
+            agent._persist_session(
+                msgs, getattr(cli, "conversation_history", None)
+            )
+    except Exception:
+        logger.debug("one-shot final session persist retry failed", exc_info=True)
+    db = getattr(agent, "_session_db", None) or getattr(cli, "_session_db", None)
+    if db is None:
+        return
+    try:
+        db.flush_token_counts()
+    except Exception:
+        logger.debug("one-shot token-count drain failed", exc_info=True)
+    try:
+        db.end_session(session_id, "cli_close")
+    except Exception:
+        logger.debug("one-shot end_session failed", exc_info=True)
+
+
 def _finalize_single_query(cli) -> None:
     """Close one-shot CLI resources before releasing the active session lease."""
     try:
+        # Durable flush FIRST: memory-provider shutdown inside _run_cleanup
+        # can issue aux-LLM calls, and nothing after it may fail in a way
+        # that loses the turn (#88583).
+        try:
+            _flush_one_shot_session_store(cli)
+        except Exception:
+            logger.debug("one-shot session store flush failed", exc_info=True)
         _notify_single_query_session_finalize(cli)
         _run_cleanup(notify_session_finalize=False)
     finally:
@@ -1473,6 +1561,86 @@ def _path_is_within_root(path: Path, root: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _cleanup_failed_worktree_add(repo_root: str, wt_path: Path, branch_name: str) -> None:
+    """Make a failed/timed-out ``git worktree add`` atomic after the fact.
+
+    ``git worktree add`` is not transactional: killed mid-checkout (the 30s
+    timeout) it leaves (a) the partially-materialized worktree directory,
+    (b) an admin entry under ``.git/worktrees/<name>`` that is LOCKED with a
+    reason naming the *current, live* pid — so the startup pruner's
+    dead-pid unlock will never touch it — and (c) sometimes the new branch.
+    Any retry of the same name then fails on the leftovers. Sweep all three,
+    quietly; every step is fail-soft because this runs on an error path.
+    """
+    import shutil
+    import subprocess
+
+    def _git(*args: str) -> None:
+        try:
+            subprocess.run(
+                ["git", *args],
+                capture_output=True, text=True, timeout=15, cwd=repo_root, check=False,
+            )
+        except Exception:
+            pass
+
+    try:
+        # Unlock first: `worktree remove --force` refuses a locked tree.
+        _git("worktree", "unlock", str(wt_path))
+        _git("worktree", "remove", "--force", str(wt_path))
+        if wt_path.exists():
+            shutil.rmtree(wt_path, ignore_errors=True)
+        # Drop the orphaned admin entry when the dir is already gone
+        # (`remove` needs the dir; `prune` handles the dirless case).
+        _git("worktree", "prune")
+        _git("branch", "-D", branch_name)
+    except Exception as e:
+        logger.debug("cleanup after failed worktree add: %s", e)
+
+
+_PACK_SPRAWL_THRESHOLD = 15
+
+
+def _maintain_pack_health(repo_root: str) -> None:
+    """Repack the object store when pack files sprawl (background thread).
+
+    On a multi-agent box every fetch/salvage session adds packs; git never
+    consolidates them on its own aggressively enough (``gc --auto``'s
+    threshold is 50 *and* it counts only non-kept packs). Past a few dozen
+    packs every object lookup scans every pack index, and worktree creation
+    can blow its 30s timeout under concurrent load (Aug 2026 incident: 39
+    packs, 638MB → ``hermes -w`` timing out; a full repack halved the store
+    and restored 0.5s creates). Threshold 15 keeps lookups fast without
+    repacking on every startup; ``nice`` + background thread keeps it off
+    the startup path. Fail-soft everywhere.
+    """
+    import subprocess
+
+    try:
+        pack_dir = Path(repo_root) / ".git" / "objects" / "pack"
+        if not pack_dir.is_dir():
+            return
+        packs = len(list(pack_dir.glob("*.pack")))
+        if packs < _PACK_SPRAWL_THRESHOLD:
+            return
+        logger.info("git pack sprawl (%d packs) — repacking in background", packs)
+        cmd = ["git", "repack", "-a", "-d", "--quiet"]
+        if os.name == "posix":
+            cmd = ["nice", "-n", "19", *cmd]
+        subprocess.run(
+            cmd,
+            capture_output=True, text=True, timeout=1800, cwd=repo_root, check=False,
+        )
+        # Repacking can strand now-duplicated admin files; a prune here keeps
+        # the worktree bookkeeping tight on the same maintenance pass.
+        subprocess.run(
+            ["git", "worktree", "prune"],
+            capture_output=True, text=True, timeout=60, cwd=repo_root, check=False,
+        )
+    except Exception as e:
+        logger.debug("pack maintenance skipped: %s", e)
 
 
 def _resolve_worktree_base(
@@ -1614,7 +1782,8 @@ def _resolve_worktree_base(
     return "HEAD", "HEAD (local — could not reach remote)"
 
 
-def _setup_worktree(repo_root: str = None, sync_base: bool = True) -> Optional[Dict[str, str]]:
+def _setup_worktree(repo_root: str = None, sync_base: bool = True,
+                    name: Optional[str] = None) -> Optional[Dict[str, str]]:
     """Create an isolated git worktree for this CLI session.
 
     Returns a dict with worktree metadata on success, None on failure.
@@ -1624,6 +1793,11 @@ def _setup_worktree(repo_root: str = None, sync_base: bool = True) -> Optional[D
     freshly-fetched remote tip rather than the (possibly stale) local ``HEAD``
     — see ``_resolve_worktree_base``. Set ``worktree_sync: false`` in config to
     branch from local ``HEAD`` (the pre-#10760-followup behavior).
+
+    When *name* is given (``/worktree new <name>``), the worktree directory
+    and branch use the sanitized name instead of a random ``hermes-<id>``.
+    Named trees intentionally skip the ``hermes-`` prefix so the startup
+    pruner ages them on its slower named-tree schedule.
     """
     import subprocess
 
@@ -1633,14 +1807,25 @@ def _setup_worktree(repo_root: str = None, sync_base: bool = True) -> Optional[D
         print("  cd into your project repo first, then run hermes -w")
         return None
 
-    short_id = uuid.uuid4().hex[:8]
-    wt_name = f"hermes-{short_id}"
+    if name:
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-._")[:40]
+        if safe:
+            wt_name = safe
+        else:
+            wt_name = f"hermes-{uuid.uuid4().hex[:8]}"
+    else:
+        wt_name = f"hermes-{uuid.uuid4().hex[:8]}"
     branch_name = f"hermes/{wt_name}"
 
     worktrees_dir = Path(repo_root) / ".worktrees"
     worktrees_dir.mkdir(parents=True, exist_ok=True)
 
     wt_path = worktrees_dir / wt_name
+    if name and wt_path.exists():
+        print(f"\033[31m✗ Worktree already exists: {wt_path}\033[0m")
+        print("  Pick a different name, or remove it with: "
+              f"git worktree remove {wt_path}")
+        return None
 
     # Ensure .worktrees/ is in .gitignore
     gitignore = Path(repo_root) / ".gitignore"
@@ -1694,15 +1879,25 @@ def _setup_worktree(repo_root: str = None, sync_base: bool = True) -> Optional[D
                     "worktree add from %s failed (%s); retrying from local HEAD",
                     base_ref, result.stderr.strip(),
                 )
+                _cleanup_failed_worktree_add(repo_root, wt_path, branch_name)
                 base_ref, base_label = "HEAD", "HEAD (fallback — remote base failed)"
                 result = subprocess.run(
                     ["git", "worktree", "add", str(wt_path), "-b", branch_name, base_ref],
                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, cwd=repo_root,
                 )
             if result.returncode != 0:
+                _cleanup_failed_worktree_add(repo_root, wt_path, branch_name)
                 print(f"\033[31m✗ Failed to create worktree: {result.stderr.strip()}\033[0m")
                 return None
     except Exception as e:
+        # A timed-out/failed `worktree add` is NOT atomic: git leaves the
+        # partially-materialized directory plus a LOCKED admin entry under
+        # .git/worktrees/<name> whose lock pid is THIS live process — so the
+        # startup pruner's dead-pid unlock never reaps it and every retry of
+        # the same name fails. Clean up our own wreckage before surfacing
+        # the error (Aug 2026 incident: 30s timeout during pack-sprawl left
+        # exactly this poison).
+        _cleanup_failed_worktree_add(repo_root, wt_path, branch_name)
         print(f"\033[31m✗ Failed to create worktree: {e}\033[0m")
         return None
 
@@ -3899,7 +4094,7 @@ _TERMINAL_INPUT_MODE_RESET_SEQ = (
     "\x1b[0m"      # reset text attributes
     "\x1b[?25h"    # ensure cursor visible
 )
-_EXTENDED_ENTER_KEYS_SEQ = "\x1b[>4;2m"
+_EXTENDED_ENTER_KEYS_SEQ = "\x1b[>1u\x1b[>4;2m"
 
 
 _BACKSLASH_LINE_CONTINUATION_RE = re.compile(r"\\[ \t]*$")
@@ -3932,25 +4127,29 @@ def _terminal_supports_extended_enter_keys(env: Optional[Mapping[str, str]] = No
 
 
 def _enable_extended_enter_keys(output=None, env: Optional[Mapping[str, str]] = None) -> bool:
-    """Ask allowlisted terminals to report Shift+Enter distinctly.
+    """Ask allowlisted terminals to report modified keys distinctly.
 
-    Writes xterm modifyOtherKeys level 2 (CSI >4;2m), mirroring the Ink TUI.
-    We do NOT push the Kitty keyboard protocol (CSI >1u) here because
-    prompt_toolkit 3.x cannot parse Kitty CSI-u sequences for control
-    characters — Ctrl+C arrives as ``\\x1b[99;5u`` instead of ``\\x03``,
-    which neither prompt_toolkit's key bindings nor the kernel's INTR
-    mechanism can match, leaving Ctrl+C completely dead (#56684).
+    Writes the Kitty keyboard protocol push (CSI >1u, disambiguate mode) AND
+    xterm modifyOtherKeys level 2 (CSI >4;2m), mirroring the Ink TUI —
+    terminals honor whichever protocol they implement.  Both are needed:
+    kitty-the-terminal removed modifyOtherKeys support entirely (it only
+    speaks its own protocol), while tmux/VS Code only accept modifyOtherKeys.
 
-    modifyOtherKeys=2 re-encodes ALL Ctrl+key combos as
-    ``ESC[27;5;<codepoint>~`` instead of raw control bytes.
+    Under either protocol the terminal re-encodes modified keys as escape
+    sequences — Kitty disambiguate mode as ``ESC[<codepoint>;<mod>u`` (plus
+    the Esc key as ``ESC[27u``), modifyOtherKeys=2 as
+    ``ESC[27;<mod>;<codepoint>~``.  Stock prompt_toolkit 3.x maps almost
+    none of these, which is why the CSI >1u push was temporarily removed in
+    #87074 (Ctrl+C arrived as ``ESC[99;5u`` and died, #56684).
     ``install_modify_other_keys_aliases()`` (called at CLI startup from
-    ``hermes_cli.pt_input_extras``) populates prompt_toolkit's
-    ``ANSI_SEQUENCES`` with the full Ctrl+letter / Ctrl+digit / Ctrl+symbol
-    and Alt+letter mappings under both the modifyOtherKeys and CSI-u formats,
-    so every existing key binding continues to fire (#87711).
+    ``hermes_cli.pt_input_extras``) now populates ``ANSI_SEQUENCES`` with the
+    full Ctrl/Alt/Shift/multi-modifier and functional-key tables under BOTH
+    formats, so every existing key binding continues to fire — including
+    Ctrl+C, which is handled by prompt_toolkit's ``c-c`` binding (raw mode
+    clears ISIG, so the kernel INTR path was never in play for the CLI).
 
-    The exit reset sequence already pops/resets both modes, so this is
-    safe across normal exits, Ctrl+C, and SIGTERM cleanup.
+    The exit reset sequence pops/resets both modes, so this is safe across
+    normal exits, Ctrl+C, and SIGTERM cleanup.
     """
     if not _terminal_supports_extended_enter_keys(env):
         return False
@@ -4929,7 +5128,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
-        self.disabled_toolsets = CLI_CONFIG["agent"].get("disabled_toolsets") or []
+        from agent.skill_utils import parse_config_string_list
+
+        self.disabled_toolsets = parse_config_string_list(CLI_CONFIG["agent"].get("disabled_toolsets"))
 
         if toolsets and "all" not in toolsets and "*" not in toolsets:
             # Validate each toolset — MCP server names are resolved via
@@ -8192,6 +8393,35 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 "[dim]   Switch with: /model sonnet  or  /model gpt5[/]"
             )
 
+        # Project-local skills: one-line status. Trusted → show count;
+        # untrusted-with-skills → point at `hermes skills trust`. Never raises.
+        try:
+            from agent.skill_utils import (
+                get_project_skills_dirs,
+                get_untrusted_project_skills_root,
+                iter_skill_index_files,
+            )
+            _proj_dirs = get_project_skills_dirs()
+            if _proj_dirs:
+                _n = sum(
+                    sum(1 for _ in iter_skill_index_files(d, "SKILL.md"))
+                    for d in _proj_dirs
+                )
+                if _n:
+                    self._console_print(
+                        f"[dim]◆ {_n} project skill(s) loaded from this repo[/]"
+                    )
+            else:
+                _untrusted = get_untrusted_project_skills_root()
+                if _untrusted is not None:
+                    _root, _n = _untrusted
+                    self._console_print(
+                        f"[yellow]◆ {_n} project skill(s) found in {_root} but not "
+                        f"loaded — run `hermes skills trust` to enable them.[/]"
+                    )
+        except Exception:
+            logger.debug("project skills banner notice failed", exc_info=True)
+
         self._console_print()
 
     def _restore_session_cwd(self, session_meta: dict, *, quiet: bool = False) -> None:
@@ -8563,6 +8793,16 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 sys.stdout.flush()
         except Exception:
             return
+
+        # The reset sequence above pops kitty keyboard mode and resets
+        # modifyOtherKeys too — re-request extended keys so Shift+Enter /
+        # modified-key reporting isn't silently dead for the rest of the
+        # session after a recovery (sibling of the startup push).
+        try:
+            if _cli_multiline_shortcuts_enabled(self.config or CLI_CONFIG):
+                _enable_extended_enter_keys(output)
+        except Exception:
+            pass
 
         logger.warning("Recovered terminal input modes after leak: %s", reason)
         if not self._input_mode_recovery_notice_shown:
@@ -11341,6 +11581,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             self.undo_last(_undo_n)
         elif canonical == "branch":
             self._handle_branch_command(cmd_original)
+        elif canonical == "worktree":
+            self._handle_worktree_command(cmd_original)
         elif canonical == "save":
             self.save_conversation(cmd_original)
         elif canonical == "cron":
@@ -19313,8 +19555,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 # The app enables focus reporting + mouse tracking; record that
                 # so _run_cleanup resets them on exit (#36823). When multiline
                 # shortcuts are on, also ask supported terminals (e.g. iTerm2)
-                # to distinguish Shift+Enter from Enter; the same cleanup reset
-                # pops kitty keyboard mode and resets modifyOtherKeys.
+                # to report modified keys distinctly (kitty protocol +
+                # modifyOtherKeys); the cleanup reset pops both modes.
                 _mark_tui_input_modes_active()
                 if _multiline_shortcuts_enabled:
                     _enable_extended_enter_keys(app.output)
@@ -19695,8 +19937,16 @@ def main(
                     # is immune to reaping (<24h age gate + live pid lock).
                     _repo = _git_repo_root()
                     if _repo:
+                        def _worktree_maintenance(repo: str) -> None:
+                            _prune_stale_worktrees(repo)
+                            # Same pass: repack when packs sprawl, so object
+                            # lookups (and the next `worktree add`) stay fast
+                            # on multi-agent boxes. After the pruner so the
+                            # repack sees final refs.
+                            _maintain_pack_health(repo)
+
                         threading.Thread(
-                            target=_prune_stale_worktrees,
+                            target=_worktree_maintenance,
                             args=(_repo,),
                             name="worktree-prune",
                             daemon=True,
@@ -19871,7 +20121,15 @@ def main(
                     # Cancel any pre-existing alarm to avoid colliding with
                     # caller-installed timers.
                     _sig_mod.signal(_sig_mod.SIGALRM, lambda *_: os._exit(0))
-                    _sig_mod.alarm(2)
+                    _sig_mod.alarm(5)
+            except Exception:
+                pass
+            # os._exit(0) skips atexit AND SessionDB's token-drain hook, so
+            # flush + finalize the session store here or the worker's turn
+            # (and its usage deltas) never become durable (#88583 / #50881
+            # class). Best-effort under the SIGALRM deadman above.
+            try:
+                _flush_one_shot_session_store(cli)
             except Exception:
                 pass
             try:

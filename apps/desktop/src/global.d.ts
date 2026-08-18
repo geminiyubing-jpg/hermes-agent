@@ -1,4 +1,5 @@
 import type { GatewayWsUrlResult } from '@hermes/shared'
+import type { TranslucencyState } from '@hermes/shared/translucency'
 
 import type { WakeIndicatorState } from './lib/wake-indicator'
 import type {
@@ -31,6 +32,10 @@ declare global {
       }) => Promise<GatewayWsUrlResult>
       // Union agent roster across every registered connection.
       getAgentRoster?: () => Promise<DesktopAgentRoster>
+      // Credential-free routes across the union connection registry. The
+      // optional profile list is used only by the single-local v1 fallback;
+      // endpoint and auth material never crosses the IPC boundary.
+      getProfileRoutes: (profiles: string[]) => Promise<DesktopPluginProfileRoute[]>
       // Reconnect-after-wake recovery: liveness-probe the cached PRIMARY backend
       // and drop it if a remote one has gone unreachable, so the next
       // getConnection() rebuilds a reachable descriptor instead of the renderer
@@ -143,6 +148,11 @@ declare global {
         // Fan out `hermes update` to every eligible registered connection;
         // cloud entries are skipped (platform-managed), each row independent.
         updateAll?: () => Promise<{ ok: boolean; results: DesktopConnectionUpdateResult[] }>
+        // Registry lifecycle push: fired when a connection is removed or
+        // materially edited so the renderer can dispose (and re-dial) the
+        // secondary gateways scoped to it. Optional: older Electron mains
+        // don't emit it.
+        onChanged?: (callback: (payload: { connectionId: string; reason: 'removed' | 'updated' }) => void) => () => void
       }
       sshConfigHosts: () => Promise<DesktopSshHostsResult>
       sshResolveHost: (host: string) => Promise<DesktopSshResolveResult>
@@ -217,7 +227,7 @@ declare global {
       setActiveWork?: (payload: HermesActiveWork) => void
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setNativeTheme?: (mode: 'dark' | 'light' | 'system') => void
-      setTranslucency?: (payload: { intensity: number }) => void
+      setTranslucency?: (payload: TranslucencyState) => void
       setKeepAwake?: (on: boolean) => void
       setDisableF12?: (blocked: boolean) => void
       setPreviewShortcutActive?: (active: boolean) => void
@@ -340,7 +350,9 @@ declare global {
         start: (options?: { cols?: number; cwd?: string; rows?: number }) => Promise<HermesTerminalSession>
         write: (id: string, data: string) => Promise<boolean>
       }
+      reachPreviewUrl?: (url: string) => Promise<string>
       onClosePreviewRequested?: (callback: () => void) => () => void
+      onPreviewNav?: (callback: (command: 'back' | 'forward' | 'reload') => void) => () => void
       onOpenFolderRequested?: (callback: () => void) => () => void
       onOpenUpdatesRequested?: (callback: () => void) => () => void
       onDeepLink?: (
@@ -441,6 +453,11 @@ export interface DesktopVersionInfo {
   nodeVersion: string
   platform: string
   hermesRoot: string
+  /** True when the running renderer bundle predates desktop changes in the
+   *  installed source tree (runtime updated, app binary not rebuilt/swapped). */
+  bundleOutOfSync?: boolean
+  /** Commits under apps/desktop/ the running bundle is missing (null unknown). */
+  bundleCommitsBehind?: null | number
 }
 
 export type DesktopUninstallMode = 'full' | 'gui' | 'lite'
@@ -573,6 +590,15 @@ export interface DesktopUpdateProgress {
   at: number
 }
 
+export interface DesktopPluginProfileRoute {
+  // Registry source identity. Pair with profile; profile names are not unique
+  // across sources.
+  connectionId: string
+  mode: 'local' | 'remote'
+  profile: string
+  targetProfile: string
+}
+
 export interface HermesConnection {
   baseUrl: string
   darwinMajor?: number
@@ -594,8 +620,9 @@ export interface HermesConnection {
   // Set for pool (non-primary) backends so the renderer knows which profile a
   // connection belongs to.
   profile?: string
-  // The registry connection this descriptor was resolved through (absent on
-  // legacy v1/primary paths). Set by getConnectionFor.
+  // The registry connection this descriptor resolves to. Registry-scoped
+  // secondaries carry it directly; legacy primary remotes preserve it from
+  // their selected stored route before dialing.
   connectionId?: string
   // True only when `profile` is a request scope on the shared primary backend.
   // A pooled backend also carries `profile`, so presence alone cannot identify
@@ -736,6 +763,15 @@ export interface DesktopRegistryConnection {
   remoteProfile?: string
   tokenSet: boolean
   tokenPreview: null | string
+  // Names of the stored extra gateway headers (Cloudflare Access etc.);
+  // header VALUES are secrets and never cross the IPC boundary. Optional so
+  // fixtures/older payloads without the field remain valid.
+  headerNames?: string[]
+  // Last-known stable backend identity (the /api/status `install_id`).
+  // Present once a roster enumeration or connection test has seen it; two
+  // connections sharing it are one physical backend registered under two
+  // addresses (display-only "Same backend as …" hint in Settings).
+  installId?: string
 }
 
 export interface DesktopConnectionsRegistry {
@@ -758,6 +794,11 @@ export interface DesktopRegistryConnectionInput {
   // Plaintext token to store (encrypted at rest); omit to keep the saved one.
   token?: string
   allowPlainTextToken?: boolean
+  // Extra gateway headers for remote/cloud entries (access proxies such as
+  // Cloudflare Access). The map is authoritative when present: name → new
+  // plaintext value (encrypted at rest), or null to keep the stored secret
+  // for that name. Omit the field entirely to keep the saved set unchanged.
+  headers?: Record<string, null | string>
   org?: string
   host?: string
   user?: string
@@ -785,6 +826,8 @@ export interface DesktopAgentRoster {
     kind: DesktopConnectionKind
     reachable: boolean
     error?: string
+    // Stable backend identity (/api/status install_id) when known.
+    installId?: string
   }[]
 }
 
@@ -896,6 +939,13 @@ export interface DesktopBootProgress {
   message: string
   phase: string
   progress: number
+  /**
+   * True when the boot failure carried by `error` was a TRANSIENT remote
+   * failure (dropped SSH/HTTP registered connection, mint timeout) that the
+   * renderer may retry automatically. Absent/false on success updates,
+   * local failures, and confirmed reauth rejections.
+   */
+  retryable?: boolean
   running: boolean
   timestamp: number
 }
@@ -986,6 +1036,12 @@ export interface HermesApiRequest {
   // (window) backend. Read-only cross-profile data is served by the primary, so
   // this is only needed for profile-scoped live/settings calls.
   profile?: string | null
+  // Route this REST call to a specific REGISTERED gateway connection (v2
+  // registry). Data owned by a remote gateway — cron jobs and their run
+  // sessions — lives in that host's state.db, so requests for it must resolve
+  // through the owning connection, not the local profile pool. Omit / '' /
+  // 'local' keep the legacy profile-routed path.
+  connectionId?: string | null
 }
 
 export interface HermesNotification {
