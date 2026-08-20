@@ -146,6 +146,15 @@ DEFAULT_CONFIG = {
         # (force on/off for all models), or a list of model-name substrings
         # to match (e.g. ["gpt", "codex", "gemini", "qwen"]).
         "tool_use_enforcement": "auto",
+        # Execution-discipline guidance: injects a system prompt block covering
+        # tool persistence, mandatory tool use for arithmetic/system facts,
+        # external-write read-back, count reconciliation, literal preservation
+        # of identifiers, and verification-gated completion.  Chosen once at
+        # session start keyed on model name (prompt stays byte-stable).
+        # Values: "auto" (default — applies to gpt/codex/grok/deepseek/kimi/
+        # qwen/glm/minimax/mimo/mistral models), true/false (force on/off for
+        # all models), or a list of model-name substrings to match.
+        "execution_guidance": "auto",
         # Intent-ack continuation: when the model opens a turn by narrating an
         # action it will take ("I'll go check the logs...") but emits no tool
         # call, intercept the turn-end, inject a "continue now, execute the
@@ -328,6 +337,20 @@ DEFAULT_CONFIG = {
         # matches a key in this dict.
         # Edit directly in config.yaml (no CLI support due to dots in keys).
         "reasoning_overrides": {},
+
+        # Per-provider opt-in to preserve assistant ``reasoning_content``
+        # when replaying history.  The built-in echo families (DeepSeek,
+        # Kimi/Moonshot, Xiaomi MiMo) are auto-detected by provider name
+        # and base-URL host.  Custom providers and OpenAI-compatible
+        # gateways that proxy those same models (or other thinking-mode
+        # backends) are not covered by the host-based rules.
+        #
+        # Set ``reasoning_echo: true`` on a ``model:`` entry (primary) or a
+        # ``fallback_providers:`` entry (per-fallback) to preserve
+        # ``reasoning_content`` on replay for that provider only.  Default
+        # ``false`` keeps the historical strict-provider behavior (Mistral,
+        # Groq, Cerebras reject the field with HTTP 400).
+        "reasoning_echo": False,
     },
 
     "terminal": {
@@ -1653,7 +1676,11 @@ DEFAULT_CONFIG = {
         # the raw transcript is also echoed back to the user as a 🎙️ message.
         # Set false to keep STT for the agent while suppressing that user-facing echo.
         "echo_transcripts": True,
-        "provider": "local",  # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe) | "elevenlabs" (Scribe) | "deepinfra"
+        # NOTE: no seeded "provider" key. Strict selection semantics treat a
+        # stored stt.provider as an explicit user pick; seeding "local" here
+        # made a fresh install indistinguishable from a user choice. The
+        # autodetect ladder covers unset. Valid values when set:
+        # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe) | "elevenlabs" (Scribe) | "deepinfra"
         # Global language hint applied to EVERY provider unless a per-provider
         # language overrides it. Defaults to "en" — Whisper auto-detection
         # frequently misidentifies short/accented clips, which reads as

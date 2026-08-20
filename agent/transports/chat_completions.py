@@ -84,13 +84,21 @@ def _add_prompt_cache_key(
 
 
 def _reasoning_config_for_model(model: str, reasoning_config: dict | None) -> dict | None:
-    """Return the model's wire-compatible reasoning config."""
+    """Return the model's wire-compatible reasoning config.
+
+    Hermes' internal effort set extends the wire vocabulary with ``ultra``
+    (the /reasoning command documents none..xhigh|max|ultra). OpenAI-
+    compatible wires — OpenRouter chief among them — accept exactly
+    max|xhigh|high|medium|low|minimal|none and reject the extension with
+    HTTP 400, so an ``ultra`` configured for an Anthropic default leaks
+    untranslated when a per-job/per-turn override pins a non-Anthropic
+    model on this transport and the whole call fails (#89503). Map the
+    extension to its wire cap for every model on this path; the Anthropic
+    adapter keeps its own richer mapping.
+    """
     if not isinstance(reasoning_config, dict):
         return reasoning_config
-    if (
-        "gpt-5.6" in (model or "").lower()
-        and str(reasoning_config.get("effort") or "").strip().lower() == "ultra"
-    ):
+    if str(reasoning_config.get("effort") or "").strip().lower() == "ultra":
         normalized = dict(reasoning_config)
         normalized["effort"] = "max"
         return normalized
@@ -559,11 +567,36 @@ class ChatCompletionsTransport(ProviderTransport):
                 and reasoning_config.get("enabled") is False
             )
             if not _kimi_thinking_off:
-                _kimi_effort = "medium"
+                # K3 accepts low/high/max only (default high) — "medium" and
+                # Hermes' upper-ladder levels 400 or silently degrade. Mirror
+                # the kimi-coding plugin's _K3_EFFORT_MAP; older Kimi models
+                # keep the low/medium/high vocabulary with the stronger
+                # Hermes levels capped at high instead of being dropped
+                # (dropping them inverted the ladder: ultra sent the
+                # "medium" default, weaker than an explicit high).
+                _e = ""
                 if reasoning_config and isinstance(reasoning_config, dict):
                     _e = (reasoning_config.get("effort") or "").strip().lower()
-                    if _e in {"low", "medium", "high"}:
-                        _kimi_effort = _e
+                if "k3" in (model or "").lower():
+                    _kimi_effort = {
+                        "minimal": "low",
+                        "low": "low",
+                        "medium": "high",
+                        "high": "high",
+                        "xhigh": "max",
+                        "max": "max",
+                        "ultra": "max",
+                    }.get(_e, "high")
+                else:
+                    _kimi_effort = {
+                        "minimal": "low",
+                        "low": "low",
+                        "medium": "medium",
+                        "high": "high",
+                        "xhigh": "high",
+                        "max": "high",
+                        "ultra": "high",
+                    }.get(_e, "medium")
                 api_kwargs["reasoning_effort"] = _kimi_effort
 
         # Tencent TokenHub: top-level reasoning_effort (unless thinking disabled)
@@ -574,11 +607,22 @@ class ChatCompletionsTransport(ProviderTransport):
                 and reasoning_config.get("enabled") is False
             )
             if not _tokenhub_thinking_off:
+                # TokenHub accepts low/medium/high. Map Hermes' full ladder
+                # onto that set instead of dropping unknown levels to the
+                # "high" default — dropping inverted the ladder for
+                # "minimal" (asked for the least, got the most).
                 _tokenhub_effort = "high"
                 if reasoning_config and isinstance(reasoning_config, dict):
                     _e = (reasoning_config.get("effort") or "").strip().lower()
-                    if _e in {"low", "medium", "high"}:
-                        _tokenhub_effort = _e
+                    _tokenhub_effort = {
+                        "minimal": "low",
+                        "low": "low",
+                        "medium": "medium",
+                        "high": "high",
+                        "xhigh": "high",
+                        "max": "high",
+                        "ultra": "high",
+                    }.get(_e, "high")
                 api_kwargs["reasoning_effort"] = _tokenhub_effort
 
         # LM Studio: top-level reasoning_effort. Only emit when the model
@@ -854,17 +898,25 @@ class ChatCompletionsTransport(ProviderTransport):
         preserved for downstream replay.
         """
         choice = response.choices[0]
-        msg = choice.message
+        msg = getattr(choice, "message", None)
         # Poolside returns integer finish_reason (e.g. 24) instead of string
-        _fr = choice.finish_reason
+        _fr = getattr(choice, "finish_reason", None)
         if isinstance(_fr, int):
             _fr = str(_fr)
         finish_reason = _fr or "stop"
 
         tool_calls = None
-        if msg.tool_calls:
+        message_tool_calls = getattr(msg, "tool_calls", None)
+        if message_tool_calls:
             tool_calls = []
-            for tc in msg.tool_calls:
+            for tc in message_tool_calls:
+                tc_function = getattr(tc, "function", None)
+                function_name = getattr(tc_function, "name", None)
+                # Match Relay's codec: skip absent function/name fields, but
+                # preserve an explicit blank name for Hermes's recovery path.
+                if tc_function is None or function_name is None:
+                    continue
+                function_arguments = getattr(tc_function, "arguments", None)
                 # Preserve provider-specific extras on the tool call.
                 # Gemini 3 thinking models attach extra_content with
                 # thought_signature — without replay on the next turn the API
@@ -887,9 +939,13 @@ class ChatCompletionsTransport(ProviderTransport):
                     tc_provider_data["extra_content"] = extra
                 tool_calls.append(
                     ToolCall(
-                        id=tc.id,
-                        name=tc.function.name,
-                        arguments=tc.function.arguments,
+                        id=getattr(tc, "id", None),
+                        name=function_name,
+                        arguments=(
+                            function_arguments
+                            if function_arguments is not None
+                            else "{}"
+                        ),
                         provider_data=tc_provider_data or None,
                     )
                 )
@@ -932,7 +988,7 @@ class ChatCompletionsTransport(ProviderTransport):
         # Promote it to content + a ``content_filter`` finish reason so the
         # loop's refusal handler surfaces it clearly and stops. ``refusal`` is
         # ``None`` for normal responses, so this is a no-op in the common case.
-        content = msg.content
+        content = getattr(msg, "content", None)
         refusal = getattr(msg, "refusal", None)
         if refusal is None and hasattr(msg, "model_extra"):
             _msg_extra = getattr(msg, "model_extra", None) or {}
