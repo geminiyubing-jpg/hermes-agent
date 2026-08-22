@@ -60,21 +60,22 @@ def _(rid, params: dict) -> dict:
             return text[:80] + "..."
         return text
 
-    def _preferred_session_row(profile_path, session_id):
-        """Precise summary for ONE caller-pinned session id, or None.
+    def _canonical_session_row(profile_path):
+        """Summary of the profile's canonical "Bot Chat" registry row, or None.
 
-        Complements ``last_session``: that field answers "what is the newest
-        conversation", this answers "what about THIS conversation". Callers
-        that open a specific session on click (e.g. a roster whose rows open
-        a pinned chat) pass their pins via ``preferred_session_ids`` so the
-        preview and the click target describe the same session
-        (hermes-agent#88200).
+        The canonical chat's identity is the NAME: the session titled exactly
+        "Bot Chat" on this profile (core UNIQUE(title) makes it a registry of
+        at most one row). Complements ``last_session``: that field answers
+        "what is the newest conversation", this answers "where is the
+        forever-chat" — so a roster row's preview and its click target
+        describe the same session (hermes-agent#88200) with no client-side
+        pointer involved.
 
         Exact-lookup semantics, deliberately different from the listing:
-        hidden rows still resolve (a hidden-from-sidebar session EXISTS),
+        hidden rows still resolve (canonical chats are always hidden),
         compression lineages resolve to the live tip with the same resolver
         ``session.resume`` uses, and denied internal sources (tool/kanban)
-        count as absent. The reported ``id`` stays the caller's durable pin
+        count as absent. The reported ``id`` stays the durable registry row
         while ``resolved_id`` names the live tip. Best-effort: any failure
         degrades to None rather than failing the whole profiles.list call.
         """
@@ -89,8 +90,11 @@ def _(rid, params: dict) -> dict:
             deny = frozenset({"kanban", "tool"})
             db = SessionDB(db_path=db_path)
             try:
-                row = db.get_session(session_id)
+                row = db.get_session_by_title("Bot Chat")
                 if not row:
+                    return None
+                session_id = str(row.get("id") or "").strip()
+                if not session_id:
                     return None
                 if (row.get("source") or "").strip().lower() in deny:
                     return None
@@ -205,13 +209,6 @@ def _(rid, params: dict) -> dict:
         from hermes_cli.profiles import list_profiles
 
         include_sessions = is_truthy_value(params.get("include_sessions", True))
-        # Optional precise lookups: {profile_name: session_id} from callers
-        # that open a specific session per row (pinned-chat rosters). Only
-        # resolved when include_sessions is on; each named profile row gains
-        # a ``preferred_session`` summary (None when the id is gone).
-        preferred_ids = params.get("preferred_session_ids")
-        if not isinstance(preferred_ids, dict):
-            preferred_ids = {}
         out = []
         for p in list_profiles():
             row = {
@@ -231,9 +228,10 @@ def _(rid, params: dict) -> dict:
                 # a profile as active while its worker runs (#90268). Older
                 # clients ignore the extra field.
                 row["worker_session"] = worker_row
-                pin = preferred_ids.get(p.name)
-                if isinstance(pin, str) and pin.strip():
-                    row["preferred_session"] = _preferred_session_row(p.path, pin.strip())
+                # The profile's canonical "Bot Chat" registry row (or None) —
+                # identity is the NAME, resolved server-side on every listing
+                # so no client ever needs to carry a session pointer.
+                row["canonical_session"] = _canonical_session_row(p.path)
 
             # Client-agnostic UI metadata (avatars, accent colors, pinned
             # order, …) — stored server-side in profile.yaml so every
@@ -243,12 +241,22 @@ def _(rid, params: dict) -> dict:
                 from pathlib import Path as _Path
 
                 meta_path = _Path(str(p.path)) / "profile.yaml"
+                # Presence of this field feature-detects gateway-owned CAS,
+                # including a brand-new profile whose revision map is empty.
+                row["ui_meta_revisions"] = {}
                 if meta_path.is_file():
                     with open(meta_path, "r", encoding="utf-8") as f:
                         raw_meta = _yaml.safe_load(f) or {}
                     ui_meta = raw_meta.get("ui_meta")
                     if isinstance(ui_meta, dict) and ui_meta:
                         row["ui_meta"] = ui_meta
+                    revisions = raw_meta.get("_ui_meta_revisions")
+                    if isinstance(revisions, dict) and revisions:
+                        row["ui_meta_revisions"] = {
+                            str(key): max(0, int(value))
+                            for key, value in revisions.items()
+                            if isinstance(value, int) and not isinstance(value, bool)
+                        }
             except Exception:
                 pass
 
@@ -693,7 +701,9 @@ def _(rid, params: dict) -> dict:
     ``model`` + ``provider`` (both required together),
     ``disabled_skills`` (list[str], replace semantics),
     ``enabled_toolsets`` (list[str], replace semantics; empty list clears
-    the pin so every toolset is enabled again).
+    the pin so every toolset is enabled again), and
+    ``ui_meta_expected_revisions`` (dict[str, int], optional compare-and-swap
+    preconditions for keys supplied in ``ui_meta``).
 
     Each section is applied independently and best-effort; the result
     reports per-section success so a UI can surface partial failures.
@@ -728,32 +738,73 @@ def _(rid, params: dict) -> dict:
                 else:
                     import yaml as _yaml
 
-                    meta_path = profile_dir / "profile.yaml"
-                    existing = {}
-                    if meta_path.is_file():
-                        try:
-                            with open(meta_path, "r", encoding="utf-8") as f:
-                                loaded = _yaml.safe_load(f) or {}
-                            if isinstance(loaded, dict):
-                                existing = loaded
-                        except Exception:
-                            existing = {}
-                    current = existing.get("ui_meta")
-                    if not isinstance(current, dict):
-                        current = {}
-                    for key, value in incoming.items():
-                        if value is None:
-                            current.pop(key, None)
-                        else:
-                            current[key] = value
-                    if current:
-                        existing["ui_meta"] = current
-                    else:
-                        existing.pop("ui_meta", None)
-                    from utils import atomic_yaml_write
+                    expected = params.get("ui_meta_expected_revisions")
+                    if expected is not None and not isinstance(expected, dict):
+                        raise ValueError("ui_meta_expected_revisions must be an object")
 
-                    atomic_yaml_write(meta_path, existing, sort_keys=False)
-                    applied["ui_meta"] = True
+                    meta_path = profile_dir / "profile.yaml"
+                    with _profile_ui_meta_lock:
+                        existing = {}
+                        if meta_path.is_file():
+                            try:
+                                with open(meta_path, "r", encoding="utf-8") as f:
+                                    loaded = _yaml.safe_load(f) or {}
+                                if isinstance(loaded, dict):
+                                    existing = loaded
+                            except Exception:
+                                existing = {}
+
+                        raw_revisions = existing.get("_ui_meta_revisions")
+                        revisions = dict(raw_revisions) if isinstance(raw_revisions, dict) else {}
+                        revisions = {
+                            str(key): max(0, int(value))
+                            for key, value in revisions.items()
+                            if isinstance(value, int) and not isinstance(value, bool)
+                        }
+                        conflicts = {}
+                        if isinstance(expected, dict):
+                            for key in incoming:
+                                wanted = expected.get(key)
+                                actual = revisions.get(key, 0)
+                                if (
+                                    not isinstance(wanted, int)
+                                    or isinstance(wanted, bool)
+                                    or wanted < 0
+                                    or wanted != actual
+                                ):
+                                    conflicts[key] = {"expected": wanted, "actual": actual}
+
+                        if conflicts:
+                            applied["ui_meta"] = False
+                            applied["ui_meta_conflicts"] = conflicts
+                            applied["ui_meta_revisions"] = {
+                                key: revisions.get(key, 0) for key in incoming
+                            }
+                        else:
+                            current = existing.get("ui_meta")
+                            if not isinstance(current, dict):
+                                current = {}
+                            for key, value in incoming.items():
+                                if value is None:
+                                    current.pop(key, None)
+                                else:
+                                    current[key] = value
+                                revisions[key] = revisions.get(key, 0) + 1
+                            if current:
+                                existing["ui_meta"] = current
+                            else:
+                                existing.pop("ui_meta", None)
+                            # Revisions intentionally survive deletion: a
+                            # stale client must not recreate a removed key by
+                            # presenting the initial revision again.
+                            existing["_ui_meta_revisions"] = revisions
+                            from utils import atomic_yaml_write
+
+                            atomic_yaml_write(meta_path, existing, sort_keys=False)
+                            applied["ui_meta"] = True
+                            applied["ui_meta_revisions"] = {
+                                key: revisions[key] for key in incoming
+                            }
             except Exception:
                 applied["ui_meta"] = False
 
