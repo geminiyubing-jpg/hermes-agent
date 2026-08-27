@@ -384,6 +384,16 @@ _current_runtime_session_record: contextvars.ContextVar[dict | None] = (
     contextvars.ContextVar("hermes_gateway_runtime_session_record", default=None)
 )
 
+# JSON-RPC method being dispatched on this thread/task. Purely diagnostic: the
+# 4001 "session not found" warning below is the only signal a stale-runtime
+# retry loop leaves behind, and without the method name it cannot say WHICH
+# client poll is looping (a 5s `process.list` poll produced 18,614 rejections
+# against one id before the caller could be identified). Never used for
+# authorization — the method string is client-supplied.
+_current_rpc_method: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "hermes_gateway_rpc_method", default=""
+)
+
 # Reserve real stdout for JSON-RPC only; redirect Python's stdout to stderr
 # so stray print() from libraries/tools becomes harmless gateway.stderr instead
 # of corrupting the JSON protocol.
@@ -1999,12 +2009,24 @@ def write_json(obj: dict) -> bool:
        :func:`dispatch` for the lifetime of a request).
     3. Otherwise the module-level stdio transport, matching the historical
        behaviour and keeping tests that monkey-patch ``_real_stdout`` green.
+
+    Every routed event frame is stamped with a per-session monotonic
+    ``seq`` and recorded in the bounded replay ring (tui_gateway.event_replay)
+    so a WS client can resume losslessly after a reconnect via
+    ``session.events.since``.
     """
     if obj.get("method") == "event":
-        sid = ((obj.get("params") or {}).get("session_id")) or ""
+        params = obj.get("params")
+        sid = ((params or {}).get("session_id")) if isinstance(params, dict) else ""
         if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
+            from tui_gateway.event_replay import _stamp_event
+
+            _stamp_event(obj)
             return t.write(obj)
 
+    from tui_gateway.event_replay import _stamp_event
+
+    _stamp_event(obj)
     return (current_transport() or _stdio_transport).write(obj)
 
 
@@ -2432,7 +2454,11 @@ def handle_request(req: dict) -> dict | None:
     fn = _methods.get(method)
     if not fn:
         return _err(rid, -32601, f"unknown method: {method}")
-    return fn(rid, params)
+    token = _current_rpc_method.set(method)
+    try:
+        return fn(rid, params)
+    finally:
+        _current_rpc_method.reset(token)
 
 
 def _current_session_steer_authority(
@@ -2882,8 +2908,9 @@ def _sess_nowait(params, rid):
     # report is diagnosable as "request arrived and was rejected" instead of
     # "request never arrived" (see #90428).
     logger.warning(
-        "session-scoped RPC rejected: session_id=%r not in memory "
+        "session-scoped RPC rejected: method=%s session_id=%r not in memory "
         "(detached/reaped runtime; client should resume the stored session), rid=%r",
+        _current_rpc_method.get() or "?",
         sid,
         rid,
     )
@@ -3506,6 +3533,159 @@ def _session_db(session: dict):
         if close_db and db is not None:
             with contextlib.suppress(Exception):
                 db.close()
+
+
+def _rewind_active_session_history(
+    session: dict,
+    user_ordinal: int,
+    *,
+    require_retryable: bool = False,
+) -> tuple[list[dict], dict, int]:
+    """Rewind one canonical user turn while retaining carrier scaffolding.
+
+    The caller holds ``history_lock``.  Persistent sessions archive the target
+    and tail; a composite carrier's own hidden handoff is inserted in that same
+    transaction.  Memory is installed only after the durable commit and is
+    built from the already-validated prefix plus the returned scaffold row id,
+    so there is no fallible post-commit reload.
+    """
+    from agent.context_compressor import (
+        history_before_user_originated_turn,
+        retryable_user_text,
+        split_user_originated_turn,
+        user_originated_turn_view,
+    )
+    from agent.memory_manager import sanitize_context
+    from agent.tool_dispatch_helpers import (
+        _is_multimodal_tool_result,
+        _multimodal_text_summary,
+    )
+
+    def _comparison_content(message: dict) -> Any:
+        content = message.get("content")
+        if _is_multimodal_tool_result(content):
+            content = _multimodal_text_summary(content)
+        elif isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text_parts.append(str(part.get("text", "")))
+                elif (
+                    isinstance(part, dict)
+                    and part.get("type") in {"image", "image_url", "input_image"}
+                ):
+                    text_parts.append("[screenshot]")
+            content = "\n".join(text_parts) if text_parts else None
+        if message.get("role") in {"user", "assistant"} and isinstance(content, str):
+            return sanitize_context(content).strip()
+        return content
+
+    history = _history_without_ephemeral_scaffolding(session.get("history", []))
+    user_indices = [
+        index
+        for index, message in enumerate(history)
+        if user_originated_turn_view(message) is not None
+    ]
+    if user_ordinal < 0 or user_ordinal >= len(user_indices):
+        raise ValueError("target user message is no longer in session history")
+    target_index = user_indices[user_ordinal]
+    installed, live_view = history_before_user_originated_turn(history, target_index)
+    rewound_count = len(history) - target_index
+
+    session_key = str(session.get("session_key") or "").strip()
+    persisted = False
+    if session_key:
+        with _session_db(session) as db:
+            if db is None:
+                raise RuntimeError("session database is unavailable")
+            expected_active_ids = db.get_active_message_ids(session_key)
+            durable = db.get_messages_as_conversation(
+                session_key,
+                include_row_ids=True,
+            )
+            durable_user_indices = [
+                index
+                for index, message in enumerate(durable)
+                if user_originated_turn_view(message) is not None
+            ]
+            if len(durable_user_indices) != len(user_indices):
+                raise RuntimeError(
+                    "session history changed before the rewind could be persisted"
+                )
+            durable_target_index = durable_user_indices[user_ordinal]
+            durable_target = durable[durable_target_index]
+            durable_prefix, durable_live_view = history_before_user_originated_turn(
+                durable, durable_target_index
+            )
+            if _comparison_content(durable_live_view) != _comparison_content(live_view):
+                raise RuntimeError(
+                    "session history changed before the rewind could be persisted"
+                )
+            target_row_id = durable_target.get("_row_id")
+            if not isinstance(target_row_id, int):
+                raise RuntimeError("rewind target has no durable row identity")
+            if require_retryable:
+                retryable_user_text(durable_live_view.get("content"))
+            scaffold, _ = split_user_originated_turn(durable_target)
+            result = db.rewind_to_message(
+                session_key,
+                target_row_id,
+                preserve_compaction_handoff=scaffold is not None,
+                expected_active_ids=expected_active_ids,
+                expected_target_content=durable_live_view.get("content"),
+            )
+            if scaffold is not None:
+                replacement_id = result.get("replacement_message_id")
+                if not isinstance(replacement_id, int):
+                    raise RuntimeError(
+                        "rewind commit did not return the replacement scaffold id"
+                    )
+                durable_prefix[-1]["_row_id"] = replacement_id
+                durable_prefix[-1]["_db_persisted"] = True
+                installed[-1] = durable_prefix[-1]
+            # Current clients address destructive follow-ups by durable row id.
+            # Preserve the richer warm content (for example image parts), but
+            # copy row identities when the retained warm/durable shapes align.
+            if len(installed) == len(durable_prefix) and all(
+                warm.get("role") == durable_message.get("role")
+                and bool(warm.get("display_kind"))
+                == bool(durable_message.get("display_kind"))
+                and _comparison_content(warm)
+                == _comparison_content(durable_message)
+                for warm, durable_message in zip(installed, durable_prefix)
+            ):
+                for warm, durable_message in zip(installed, durable_prefix):
+                    row_id = durable_message.get("_row_id")
+                    if isinstance(row_id, int):
+                        warm["_row_id"] = row_id
+            live_view = durable_live_view
+            rewound_count = int(result.get("rewound_count", 0))
+            persisted = True
+    elif require_retryable:
+        retryable_user_text(live_view.get("content"))
+
+    installed = [message.copy() for message in installed]
+    session["history"] = installed
+    session["history_version"] = int(session.get("history_version", 0)) + 1
+    agent = session.get("agent")
+    if agent is not None:
+        agent._session_messages = installed
+        if hasattr(agent, "_last_flushed_db_idx"):
+            agent._last_flushed_db_idx = len(installed) if persisted else 0
+        if hasattr(agent, "_db_flush_scan_prefix"):
+            agent._db_flush_scan_prefix = installed[:] if persisted else None
+    return installed, live_view, rewound_count
+
+
+def _history_without_ephemeral_scaffolding(history: list[dict]) -> list[dict]:
+    """Return the durable transcript shape without transient recovery rows."""
+    from run_agent import _is_ephemeral_scaffolding
+
+    return [
+        message.copy()
+        for message in history
+        if not _is_ephemeral_scaffolding(message)
+    ]
 
 
 def _persist_session_git_meta(session: dict, cwd: str, generation: int) -> None:
@@ -4761,6 +4941,16 @@ def _persist_live_session_system_prompt(session: dict | None) -> None:
     home_token = (
         set_hermes_home_override(profile_home) if profile_home else None
     )
+    # Bind the session context too. This function runs on the RPC dispatcher
+    # thread (model.switch, config.set model). On that thread the _SESSION_CWD
+    # contextvar is not set, so resolve_agent_cwd() falls back to the process
+    # TERMINAL_CWD, which the desktop pins to the home directory. The rebuilt
+    # prompt then records the wrong working directory and persists it. Later
+    # turns restore the stored bytes without change, because the turn
+    # prologue rebuilds only when _cached_system_prompt is None.
+    session_tokens = _set_session_context(
+        session_key, cwd=_session_cwd(session)
+    )
     try:
         prompt = agent._build_system_prompt(None)
         agent._cached_system_prompt = prompt
@@ -4772,6 +4962,7 @@ def _persist_live_session_system_prompt(session: dict | None) -> None:
             exc_info=True,
         )
     finally:
+        _clear_session_context(session_tokens)
         if home_token is not None:
             reset_hermes_home_override(home_token)
 
@@ -5462,6 +5653,9 @@ def _apply_model_switch(
             confirm_msg = warning.message
             if result.warning_message:
                 confirm_msg = f"{confirm_msg}\n\n{result.warning_message}"
+            # Same contract as the deferred branch below: confirm_message is
+            # canonical, warning is the pre-confirm-era alias. Identical by
+            # design, not by accident.
             return {
                 "value": result.new_model,
                 "warning": confirm_msg,
@@ -5641,6 +5835,32 @@ def _sync_agent_model_with_config(sid: str, session: dict) -> None:
             sid,
             {"message": f"Could not switch to configured model {model}: {e}"},
         )
+
+
+def _pending_switch_selection_warning(model: str, provider: str) -> str | None:
+    """Selection-guard message for a model queued mid-turn, or ``None``.
+
+    Runs BEFORE the pick is stashed, while the client still has a live response
+    it can turn into a confirm prompt. Only pre-resolution inputs exist here --
+    the model id the user picked and any explicit ``--provider`` -- which is
+    exactly what the data-policy guard keys on. Guards that can only decide
+    once base_url / api_key / model_info have settled still get their chance in
+    ``_apply_model_switch``; the cost guard returns ``None`` when pricing is
+    unknown, so an early call can only under-fire, never over-fire.
+
+    A misbehaving guard must never break the pick, so exceptions are swallowed
+    and treated as "no warning" -- the apply-time check remains the backstop.
+    """
+    if not model:
+        return None
+    try:
+        from hermes_cli.model_selection_guards import combined_selection_warning
+
+        warning = combined_selection_warning(model, provider=provider or None)
+    except Exception:
+        return None
+
+    return warning.message if warning is not None else None
 
 
 def _apply_pending_model_switch(sid: str, session: dict) -> None:
@@ -12513,19 +12733,57 @@ def _(rid, params: dict) -> dict:
                         pending_model = parsed.model_input
                     except Exception:
                         pending_model = str(value)
+                    pending_provider = (
+                        getattr(parsed, "explicit_provider", "") or ""
+                    ).strip()
+                    confirmed = bool(params.get("confirm_expensive_model", False))
+                    # Run the selection guards HERE, not only at apply time.
+                    # This branch used to answer confirm_required=False without
+                    # consulting them, so a client that implements the confirm
+                    # round-trip was told no consent was needed. It stashed the
+                    # pick, and _apply_pending_model_switch -- which calls the
+                    # guards with the stashed (unconfirmed) flag -- dropped the
+                    # switch at the next turn start. The model reverted with no
+                    # confirm ever offered, because the one moment a round-trip
+                    # was possible had already passed.
+                    if not confirmed:
+                        pending_warning = _pending_switch_selection_warning(
+                            pending_model, pending_provider
+                        )
+                        if pending_warning is not None:
+                            # Nothing is stashed: an unconfirmed guarded pick
+                            # leaves the session exactly as it was, and the
+                            # client re-sends with confirm_expensive_model to
+                            # queue it for real.
+                            return _ok(
+                                rid,
+                                {
+                                    "key": key,
+                                    "value": pending_model,
+                                    # `confirm_message` is the field to read.
+                                    # `warning` carries the same text only so
+                                    # clients written before the confirm
+                                    # round-trip existed still show something;
+                                    # `_apply_pending_model_switch` already
+                                    # prefers confirm_message and falls back to
+                                    # warning. Keep them identical or drop
+                                    # `warning` -- do not let them diverge.
+                                    "warning": pending_warning,
+                                    "confirm_required": True,
+                                    "confirm_message": pending_warning,
+                                    "scope": "session",
+                                    "deferred": False,
+                                },
+                            )
                     session["pending_model_switch"] = {
                         "raw": value,
-                        "confirm_expensive_model": bool(
-                            params.get("confirm_expensive_model", False)
-                        ),
+                        "confirm_expensive_model": confirmed,
                         # The resolved model/provider the next turn will run on.
                         # _session_info reports these while the switch is pending
                         # so the end-of-turn settle keeps showing the user's pick
                         # instead of blipping back to the still-live old model.
                         "display_model": pending_model,
-                        "display_provider": (
-                            getattr(parsed, "explicit_provider", "") or ""
-                        ).strip(),
+                        "display_provider": pending_provider,
                     }
                     return _ok(
                         rid,
@@ -15316,6 +15574,21 @@ def _persist_wake_enabled(enabled: bool) -> bool:
     except Exception as e:
         logger.warning("wake: failed to persist wake_word.enabled=%s: %s", enabled, e)
         return False
+
+
+@method("ping")
+def _(rid, params: dict) -> dict:
+    """Cheapest possible liveness probe for the desktop client.
+
+    Answered synchronously on the WS reader thread, so it works even while
+    every agent is mid-turn or the GIL is contended — the round-trip only
+    measures socket health, not backend load. A desktop client uses it after
+    sleep/wake to distinguish a half-open TCP connection (no close event, so
+    ``connectionState`` still reads ``open`` while every RPC hangs until its
+    per-call timeout) from a genuinely healthy socket, and forces a reconnect
+    in the former case instead of letting the next ``prompt.submit`` hang.
+    """
+    return _ok(rid, {"pong": True})
 
 
 @method("wake.start")
