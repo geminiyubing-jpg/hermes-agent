@@ -1,1 +1,0 @@
-Day5: 上午Stoos山脊健行（Klingenstock→Fronalpstock精华段4km）。下午自驾龙疆湖，《爱的迫降》同款S弯。3个免费停车点坐标。无人机: ⚠️Stoos限飞 · ✅龙疆湖可飞。
