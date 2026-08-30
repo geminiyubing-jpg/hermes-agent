@@ -1454,6 +1454,28 @@ def _use_real_profile() -> bool:
 _REAL_PROFILE_SESSION = "hermes-real-profile"
 _real_profile_cdp_lock = threading.Lock()
 _real_profile_cdp_cache: dict = {}
+_real_profile_chrome_procs: list = []  # Popen handles of directly-launched real browsers
+
+
+def _terminate_real_profile_chrome() -> None:
+    """Terminate real-browser processes launched for real-profile sessions.
+
+    The real-profile path launches the user's actual browser binary on the
+    profile COPY (bypassing agent-browser's mock-keychain launch). Those
+    processes are ours to reap: agent-browser only ATTACHED to them, so its
+    own session cleanup never kills them. Idempotent; safe from atexit.
+    """
+    while _real_profile_chrome_procs:
+        proc = _real_profile_chrome_procs.pop()
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    proc.kill()
+        except Exception as e:
+            logger.debug("real-profile chrome terminate failed: %s", e)
 
 
 def _agent_browser_argv(browser_cmd: str) -> list:
@@ -1596,7 +1618,8 @@ def _real_profile_cdp() -> tuple:
         if browser is None:
             return None, (
                 "browser.use_real_profile is on, but your default browser is not a "
-                "supported Chromium browser (Chrome, Edge, Brave, Chromium). "
+                "supported Chromium browser (Chrome, Edge, Brave, Brave Origin, "
+                "Chromium). "
                 "Real-profile browsing requires a Chromium default; set one or turn "
                 "the toggle off."
             )
@@ -1610,7 +1633,8 @@ def _real_profile_cdp() -> tuple:
                 "browser.use_real_profile is on, but your default browser is a "
                 "pre-release Chromium channel (Beta / Dev / Canary), which "
                 "real-profile browsing does not support. Set your default to a "
-                "stable Chrome / Edge / Brave / Chromium, or turn the toggle off."
+                "stable Chrome / Edge / Brave / Brave Origin / Chromium, or turn "
+                "the toggle off."
             )
 
         # Reuse BEFORE writing anything. A shared copy-browser may already be up
@@ -1651,9 +1675,110 @@ def _real_profile_cdp() -> tuple:
             return None, f"browser.use_real_profile is on, but {err}"
         copy_dir = snap_dir
 
-        # Launch agent-browser's packaged Chromium on the profile COPY. This is
-        # the same launch path Hermes' built-in local browsing already uses,
-        # just pointed at the copied user-data-dir — no bespoke Chrome launch.
+        # Launch the user's REAL browser binary directly on the profile COPY.
+        # agent-browser 0.35's own
+        # launch path force-adds --use-mock-keychain/--password-store=basic
+        # (and --headless=new), which makes macOS Chrome treat every
+        # keychain-encrypted cookie as undecryptable and drop it — the copied
+        # profile launches signed out. Launching the real binary ourselves with
+        # NO mock-keychain switches keeps the OS keychain path intact, exactly
+        # as the snapshot design intends; agent-browser attaches to it after
+        # via --auto-connect (--cdp <port>).
+        from hermes_cli.browser_connect import chromium_executable
+
+        real_binary = chromium_executable(browser)
+        if real_binary is None:
+            return None, (
+                "browser.use_real_profile is on, but the real browser binary for "
+                f"'{browser}' could not be found. Reinstall it or turn the toggle off."
+            )
+
+        port_file = os.path.join(copy_dir, "DevToolsActivePort")
+        try:
+            os.unlink(port_file)  # stale port from a previous launch confuses reuse probes
+        except OSError:
+            pass
+        chrome_argv = [
+            real_binary,
+            f"--user-data-dir={copy_dir}",
+            "--remote-debugging-port=0",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-hang-monitor",
+            "--disable-popup-blocking",
+            "--disable-prompt-on-repost",
+            "--disable-sync",
+            "--disable-features=Translate",
+            "--no-startup-window",
+        ]
+        # Drive the copy headlessly by default. Real-profile browsing is a
+        # background capability — the agent tweets / fills forms / scrapes on
+        # the user's behalf while they keep working; a visible window that
+        # steals focus every turn defeats the point. Chrome's NEW headless mode
+        # shares the profile's normal cookie store (unlike legacy --headless
+        # with its separate store), so the copied auth/login state still loads.
+        # Cookie decryption is unaffected by headless: the drop we guard against
+        # comes from --use-mock-keychain (which agent-browser's own launcher
+        # force-adds and we deliberately avoid), NOT from headless mode. This
+        # also covers display-less Linux (servers, CI), where a headed launch
+        # would exit at startup. Users who want to watch can opt in via the same
+        # browser.headed / AGENT_BROWSER_HEADED toggle the rest of the browser
+        # stack honors; on a display-less host we force headless regardless so
+        # the launch doesn't die.
+        _has_display = bool(
+            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+        )
+        _want_headed = _is_headed_mode() and (
+            _has_display or not sys.platform.startswith("linux")
+        )
+        if not _want_headed:
+            chrome_argv.append("--headless=new")
+        try:
+            chrome_proc = subprocess.Popen(
+                chrome_argv,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=_build_browser_env(),
+            )
+        except (subprocess.SubprocessError, OSError) as e:
+            return None, f"browser.use_real_profile is on, but the launch failed: {e}"
+        _real_profile_chrome_procs.append(chrome_proc)
+
+        # Wait for DevToolsActivePort to appear (Chrome picks a free port).
+        import time as _time
+
+        deadline = _time.monotonic() + 30.0
+        port = None
+        while _time.monotonic() < deadline:
+            try:
+                with open(port_file, encoding="utf-8") as fh:
+                    line = fh.readline().strip()
+                if line.isdigit():
+                    port = int(line)
+                    break
+            except OSError:
+                pass
+            if chrome_proc.poll() is not None:
+                _terminate_real_profile_chrome()
+                return None, (
+                    "browser.use_real_profile is on, but Chrome exited during "
+                    "startup (another instance may hold the profile copy)."
+                )
+            _time.sleep(0.25)
+        if port is None:
+            _terminate_real_profile_chrome()
+            return None, (
+                "browser.use_real_profile is on, but the real-profile browser "
+                "did not expose a debug port in time. Retry, or turn the toggle off."
+            )
+
+        # Tell agent-browser to ATTACH to the running Chrome instead of
+        # launching its own (its own launch injects mock-keychain flags).
         try:
             browser_cmd = _find_agent_browser()
         except FileNotFoundError as e:
@@ -1664,16 +1789,9 @@ def _real_profile_cdp() -> tuple:
         argv = [
             *_agent_browser_argv(browser_cmd),
             "--session", _REAL_PROFILE_SESSION,
-            "--profile", copy_dir,
+            "--cdp", str(port),
+            "open", "about:blank",
         ]
-        # Do NOT pass agent-browser's ``--headless``: it maps to Chrome's legacy
-        # headless mode, which uses a SEPARATE cookie store and loads none of the
-        # copied profile's cookies (verified: --headless → 0 cookies, default →
-        # full jar). agent-browser's default already runs windowless on a
-        # server (no DISPLAY) while reading the real cookie store, which is
-        # exactly what real-profile browsing needs. Headed mode is a superset
-        # (visible window) and equally fine, so no flag either way.
-        argv += ["open", "about:blank"]
         try:
             proc = subprocess.run(
                 argv, capture_output=True, text=True,
@@ -1696,6 +1814,19 @@ def _real_profile_cdp() -> tuple:
             )
 
         cdp = _agent_browser_get_cdp(_REAL_PROFILE_SESSION)
+        # The daemon may answer with the endpoint of a
+        # browser IT spawned (throwaway temp profile) instead of the real
+        # Chrome we launched on the copy. The DevToolsActivePort file OUR
+        # Chrome wrote is the authoritative endpoint of the logged-in browser;
+        # if the daemon disagrees, trust ours.
+        try:
+            with open(port_file, encoding="utf-8") as fh:
+                our_port = fh.readline().strip()
+            m = re.search(r":(\d+)", cdp or "")
+            if m and m.group(1) != our_port:
+                cdp = f"http://127.0.0.1:{our_port}"
+        except (OSError, ValueError):
+            pass
         if not cdp:
             return None, (
                 "browser.use_real_profile is on, but the real-profile browser "
@@ -1985,6 +2116,71 @@ BROWSER_ORPHAN_GRACE_SECONDS = max(3600, BROWSER_SESSION_INACTIVITY_TIMEOUT * 20
 # Track last activity time per session
 _session_last_activity: Dict[str, float] = {}
 
+# Session keys flagged suspect after a command timeout (#72205 / #85125 3b).
+# Written by _BrowserSessionBackend.mark_suspect (cheap, lock-free — a single
+# GIL-atomic dict write per the agent.deadline.SuspectableBackend contract);
+# consumed by ensure_healthy() at next use, which recycles the session.
+_suspect_browser_sessions: Dict[str, str] = {}
+
+
+class _BrowserSessionBackend:
+    """``agent.deadline.SuspectableBackend`` adapter for one cached session key.
+
+    The browser "backend" is the module-level ``_active_sessions[key]`` cache
+    entry plus its agent-browser daemon, so the adapter is a thin stateless
+    view keyed by session key rather than a long-lived object.  Browser
+    commands run through raw ``subprocess`` waits (not ``run_bounded_*``), so
+    the timeout path calls ``mark_suspect`` inline; ``ensure_healthy`` runs at
+    the top of ``_get_session_info`` — the single choke point every browser
+    command passes through before reusing a cached session.
+    """
+
+    __slots__ = ("_session_key",)
+
+    def __init__(self, session_key: str) -> None:
+        self._session_key = session_key
+
+    def mark_suspect(self, reason: str) -> None:
+        """Flag the cached session as possibly poisoned.
+
+        MUST stay cheap, non-blocking, and lock-free (SuspectableBackend
+        adopter contract): it runs inline on the timed-out caller's thread.
+        All expensive recycle work is deferred to ``ensure_healthy``.
+        """
+        _suspect_browser_sessions[self._session_key] = reason
+
+    def ensure_healthy(self) -> bool:
+        """Recycle the session when a prior timeout marked it suspect.
+
+        Returns ``True`` when the cached session is safe to reuse, ``False``
+        after tearing down a suspect session (caller creates a fresh one).
+        The flag is popped *before* teardown: ``_cleanup_single_browser_session``
+        issues an agent-browser ``close`` through ``_run_browser_command`` /
+        ``_get_session_info``, and clearing first keeps that re-entrant call
+        from recursing back into another recycle.
+        """
+        reason = _suspect_browser_sessions.pop(self._session_key, None)
+        if reason is None:
+            return True
+        logger.info(
+            "Recycling suspect browser session %s before reuse (%s)",
+            self._session_key, reason,
+        )
+        try:
+            _cleanup_single_browser_session(self._session_key)
+        except Exception:
+            logger.warning(
+                "Teardown of suspect browser session %s failed; a fresh "
+                "session will be created anyway", self._session_key,
+                exc_info=True,
+            )
+        return False
+
+
+def _browser_session_backend(session_key: str) -> _BrowserSessionBackend:
+    """Return the SuspectableBackend adapter for ``session_key``."""
+    return _BrowserSessionBackend(session_key)
+
 # Background cleanup thread state
 _cleanup_thread = None
 _cleanup_running = False
@@ -2045,6 +2241,12 @@ def _emergency_cleanup_all_sessions():
 
     # Clean up this process's own sessions first, so their owner_pid files
     # are removed before the reaper scans.
+    # Real-profile Chrome processes are launched directly (not by
+    # agent-browser), so the session cleanup below never reaps them.
+    try:
+        _terminate_real_profile_chrome()
+    except Exception as e:
+        logger.debug("Real-profile chrome cleanup on exit failed: %s", e)
     if _active_sessions:
         logger.info("Emergency cleanup: closing %s active session(s)...",
                     len(_active_sessions))
@@ -2714,6 +2916,22 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
         # Check if we already have a session for this task
         existing_session = _active_sessions.get(task_id)
 
+    # Suspect-session recycle (#72205 / #85125 3b): a previous command
+    # timeout marked this cached session suspect via the SuspectableBackend
+    # adapter.  ensure_healthy() tears it down here, at next use, and we fall
+    # through to create a fresh session — the expensive recycle lives on this
+    # path, not on the timeout path (mark must stay cheap).
+    if existing_session is not None and not _browser_session_backend(task_id).ensure_healthy():
+        # Teardown removes the activity entry; the replacement must be
+        # tracked by the inactivity reaper like an initial session.
+        _update_session_activity(task_id)
+        with _cleanup_lock:
+            replacement = _active_sessions.get(task_id)
+        if replacement is not None and replacement is not existing_session:
+            # Another thread already recycled and re-created it.
+            return replacement
+        existing_session = None
+
     if existing_session is not None:
         if not _session_has_expired(existing_session):
             return existing_session
@@ -2798,6 +3016,9 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
         session_info.setdefault("session_key", task_id)
         session_info.setdefault("owner_task_id", _bare_task_id_for_session_key(task_id))
         _active_sessions[task_id] = session_info
+        # A brand-new session is healthy by definition — drop any stale
+        # suspect flag left by a wedged-path eviction of its predecessor.
+        _suspect_browser_sessions.pop(task_id, None)
 
     # Lazy-start the CDP supervisor now that the session exists (if the
     # backend surfaces a CDP URL via override or session_info["cdp_url"]).
@@ -3142,6 +3363,183 @@ def _extract_screenshot_path_from_text(text: str) -> Optional[str]:
     return None
 
 
+def _discard_timed_out_browser_session(
+    task_id: str,
+    session_info: Dict[str, Any],
+    task_socket_dir: str,
+) -> None:
+    """Drop a stuck client generation without losing cloud cleanup state."""
+    with _cleanup_lock:
+        if _active_sessions.get(task_id) is not session_info:
+            return
+        _stop_cdp_supervisor(task_id)
+        if session_info.get("bb_session_id") or session_info.get("cdp_url"):
+            import uuid
+            replacement = dict(session_info)
+            replacement["session_name"] = f"h_{uuid.uuid4().hex[:10]}"
+            replacement.pop("_first_nav", None)
+            _active_sessions[task_id] = replacement
+        else:
+            _active_sessions.pop(task_id, None)
+            _session_last_activity.pop(task_id, None)
+
+        bare_task_id = _bare_task_id_for_session_key(task_id)
+        if _last_active_session_key.get(bare_task_id) == task_id:
+            _last_active_session_key.pop(bare_task_id, None)
+
+    session_name = str(session_info.get("session_name") or "")
+    if session_name:
+        pid_file = os.path.join(task_socket_dir, f"{session_name}.pid")
+        if os.path.isfile(pid_file):
+            try:
+                daemon_pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
+                if not _verify_reapable_browser_daemon(daemon_pid, task_socket_dir, session_name):
+                    return
+                # Tree-kill (#68139 / #85125 4c): the daemon spawns Chromium
+                # children; terminating only the daemon PID leaks the whole
+                # Chromium tree.  agent.deadline.kill_process_tree escalates
+                # SIGTERM → SIGKILL across the tree.
+                from agent import deadline as _deadline
+
+                _deadline.kill_process_tree(daemon_pid)
+            except (ProcessLookupError, ValueError, PermissionError, OSError):
+                logger.debug("Could not kill timed-out browser daemon for %s", session_name)
+                return
+    shutil.rmtree(task_socket_dir, ignore_errors=True)
+
+
+def _read_browser_daemon_pid(task_socket_dir: str, session_name: str) -> Optional[int]:
+    """Read the agent-browser daemon PID for a session (best-effort)."""
+    pid_file = os.path.join(task_socket_dir, f"{session_name}.pid")
+    try:
+        return int(Path(pid_file).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _browser_daemon_responsive(task_socket_dir: str, probe_timeout_s: float = 1.0) -> bool:
+    """Cheap liveness probe: can we connect to the daemon's control socket?
+
+    The agent-browser daemon listens on a unix socket inside the session's
+    socket dir.  A successful connect proves the daemon's accept loop is
+    alive (the timed-out command was wedged on the page/CDP side, not the
+    daemon).  A refused / missing / timed-out connect means the daemon is
+    wedged or dead.  Windows agent-browser uses named pipes, not unix
+    sockets — no probe is possible there, so we conservatively report
+    unresponsive (tree-kill + respawn is the safe recovery).
+    """
+    if os.name == "nt":
+        return False
+    import socket as socket_mod
+
+    if not hasattr(socket_mod, "AF_UNIX"):
+        return False
+    try:
+        entries = os.listdir(task_socket_dir)
+    except OSError:
+        return False
+    sock_paths = [
+        os.path.join(task_socket_dir, e) for e in entries if e.endswith(".sock")
+    ]
+    for sock_path in sock_paths:
+        try:
+            with socket_mod.socket(socket_mod.AF_UNIX, socket_mod.SOCK_STREAM) as s:
+                s.settimeout(probe_timeout_s)
+                s.connect(sock_path)
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _handle_browser_command_timeout(
+    task_id: str,
+    session_info: Dict[str, Any],
+    task_socket_dir: str,
+) -> None:
+    """Recover session state after a browser command timeout (#72205, #68139).
+
+    The wedged-vs-alive rule:
+
+    * **Cloud / CDP sessions** — there is no local daemon to probe or kill.
+      Replace the stuck client generation immediately (fresh ``session_name``,
+      same ``bb_session_id`` so cloud cleanup still works) — #72206's
+      original behavior, preserved verbatim.
+    * **Local daemon alive** (PID readable, process alive, identity-verified
+      as ours, control socket accepts a connection): the *command* wedged —
+      page hang, stuck navigation — but the daemon itself is fine.  Killing
+      it would be overkill and slow.  Mark the session suspect only; the
+      next use recycles it through ``ensure_healthy`` → clean agent-browser
+      ``close`` → fresh session.
+    * **Local daemon wedged or dead** (no PID, dead PID, failed identity
+      check, or unresponsive socket): the daemon cannot service a clean
+      close, and its Chromium children would leak.  Tree-kill the daemon's
+      process tree via ``agent.deadline.kill_process_tree`` and evict the
+      cache entry now; the next browser call respawns from scratch.
+
+    Both local branches ``mark_suspect`` first — cheap, lock-free — so the
+    poisoned-cache invariant holds even if the eviction below races another
+    thread's replacement (``_discard_timed_out_browser_session`` no-ops on a
+    concurrent replacement; the flag then triggers one harmless no-op
+    teardown at next use).
+    """
+    if session_info.get("bb_session_id") or session_info.get("cdp_url"):
+        _discard_timed_out_browser_session(task_id, session_info, task_socket_dir)
+        return
+
+    _browser_session_backend(task_id).mark_suspect(
+        "browser command timed out; session may be poisoned"
+    )
+
+    session_name = str(session_info.get("session_name") or "")
+    daemon_pid = _read_browser_daemon_pid(task_socket_dir, session_name) if session_name else None
+    daemon_alive = (
+        daemon_pid is not None
+        and _pid_exists(daemon_pid)
+        and _verify_reapable_browser_daemon(daemon_pid, task_socket_dir, session_name)
+        and _browser_daemon_responsive(task_socket_dir)
+    )
+    if daemon_alive:
+        logger.warning(
+            "browser daemon for %s is alive after command timeout; session "
+            "marked suspect and will be recycled at next use", task_id,
+        )
+        return
+
+    logger.warning(
+        "browser daemon for %s is wedged or dead after command timeout; "
+        "tree-killing and evicting the session", task_id,
+    )
+    _discard_timed_out_browser_session(task_id, session_info, task_socket_dir)
+    # The poisoned entry is gone (evicted, or superseded by a concurrent
+    # replacement discard refused to touch) — either way the cache no longer
+    # holds the timed-out session, so drop the flag: it must not poison a
+    # session created later under the same key.
+    _suspect_browser_sessions.pop(task_id, None)
+
+
+def _pid_exists(pid: int) -> bool:
+    """Best-effort 'is this PID alive' check (signal 0 / psutil on Windows)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import psutil
+
+            return psutil.pid_exists(pid)
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)  # windows-footgun: ok — psutil.pid_exists above handles Windows
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 def _run_browser_command(
     task_id: str,
     command: str,
@@ -3215,6 +3613,9 @@ def _run_browser_command(
     except Exception as e:
         logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
         return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
+    # Cleanup stops the supervisor before closing the backend; keep it stopped.
+    if command != "close" and session_info.get("cdp_url"):
+        _ensure_cdp_supervisor(task_id)
 
     # Build the command with the appropriate backend flag.
     # Cloud mode: --cdp <websocket_url> connects to Browserbase.
@@ -3353,6 +3754,7 @@ def _run_browser_command(
             proc.wait()
             stdout, stderr = _read_command_output_files(stdout_path, stderr_path)
             _unlink_command_output_files(stdout_path, stderr_path)
+            _handle_browser_command_timeout(task_id, session_info, task_socket_dir)
             if stderr and stderr.strip():
                 logger.warning(
                     "browser '%s' stderr after timeout: %s",

@@ -620,6 +620,7 @@ class ModelSwitchResult:
     api_key: str = ""
     base_url: str = ""
     api_mode: str = ""
+    request_overrides: Optional[dict] = None
     error_message: str = ""
     warning_message: str = ""
     provider_label: str = ""
@@ -1496,6 +1497,7 @@ def switch_model(
     from hermes_cli.runtime_provider import resolve_runtime_provider
 
     resolved_alias = ""
+    request_overrides: dict = {}
     new_model = raw_input.strip()
     target_provider = current_provider
     resolved_moa_preset = False
@@ -2183,6 +2185,22 @@ def switch_model(
     if hermes_warn:
         warnings.append(hermes_warn)
 
+    # Carry the switched provider's request_overrides (e.g. a custom_providers
+    # ``extra_body`` such as chat_template_kwargs) so a ``/model`` switch to a
+    # custom provider applies it on the gateway, matching the default-provider
+    # path. resolve_runtime_provider surfaces these for named custom providers.
+    request_overrides = None
+    try:
+        from hermes_cli.runtime_provider import (
+            _get_named_custom_provider,
+            _custom_provider_request_overrides,
+        )
+        _cp_for_ro = _get_named_custom_provider(target_provider)
+        if _cp_for_ro:
+            request_overrides = _custom_provider_request_overrides(_cp_for_ro) or None
+    except Exception:
+        request_overrides = None
+
     # --- Build result ---
     return ModelSwitchResult(
         success=True,
@@ -2192,6 +2210,7 @@ def switch_model(
         api_key=api_key,
         base_url=base_url,
         api_mode=api_mode,
+        request_overrides=dict(request_overrides or {}),
         warning_message=" | ".join(warnings) if warnings else "",
         provider_label=provider_label,
         resolved_via_alias=resolved_alias,
@@ -2643,10 +2662,18 @@ def list_authenticated_providers(
         except Exception:
             pass
 
+    from hermes_cli.config import coerce_provider_id, stringify_provider_map
+
     results: List[dict] = []
     seen_slugs: set = set()  # lowercase-normalized to catch case variants (#9545)
-    _current_provider_norm = str(current_provider or "").strip().lower()
-    _current_base_url_norm = str(current_base_url or "").strip().rstrip("/").lower()
+    # PyYAML parses unquoted numeric names (`provider: 2070`) as int. Later
+    # `.strip()` / `.lower()` on that raw value 500s GET /api/model/options.
+    current_provider = coerce_provider_id(current_provider)
+    current_base_url = str(current_base_url or "").strip()
+    current_model = str(current_model or "").strip()
+    _current_provider_norm = current_provider.lower()
+    _current_base_url_norm = current_base_url.rstrip("/").lower()
+    user_providers = stringify_provider_map(user_providers)
 
     def _can_probe_custom_provider(*, row_is_current: bool) -> bool:
         return bool(probe_custom_providers or (probe_current_custom_provider and row_is_current))
@@ -3226,7 +3253,7 @@ def list_authenticated_providers(
                 continue
             if ep_name.lower() in seen_slugs:
                 continue
-            display_name = ep_cfg.get("name", "") or ep_name
+            display_name = coerce_provider_id(ep_cfg.get("name")) or ep_name
             api_url = (
                 ep_cfg.get("base_url", "")
                 or ep_cfg.get("api", "")
@@ -3574,8 +3601,8 @@ def list_authenticated_providers(
             if not isinstance(entry, dict):
                 continue
 
-            raw_name = (entry.get("name") or "").strip()
-            api_url = (
+            raw_name = coerce_provider_id(entry.get("name"))
+            api_url = str(
                 entry.get("base_url", "")
                 or entry.get("url", "")
                 or entry.get("api", "")
@@ -3583,8 +3610,8 @@ def list_authenticated_providers(
             ).strip().rstrip("/")
             if not raw_name or not api_url:
                 continue
-            inline_api_key = (entry.get("api_key") or "").strip()
-            key_env = (entry.get("key_env") or "").strip()
+            inline_api_key = str(entry.get("api_key") or "").strip()
+            key_env = str(entry.get("key_env") or "").strip()
             api_key = inline_api_key or _scoped_key_env(key_env)
             api_mode = str(
                 entry.get("api_mode")
