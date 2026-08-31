@@ -1021,7 +1021,6 @@ ENV_VARS_BY_VERSION: Dict[int, List[str]] = {
     4: ["VOICE_TOOLS_OPENAI_KEY", "ELEVENLABS_API_KEY"],
     5: ["WHATSAPP_ENABLED", "WHATSAPP_MODE", "WHATSAPP_ALLOWED_USERS",
         "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"],
-    10: ["TAVILY_API_KEY"],
     11: ["TERMINAL_MODAL_MODE"],
 }
 
@@ -1226,7 +1225,7 @@ def _is_env_config_key(key: str) -> bool:
         'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'VOICE_TOOLS_OPENAI_KEY',
         'EXA_API_KEY', 'PARALLEL_API_KEY', 'FIRECRAWL_API_KEY', 'FIRECRAWL_API_URL',
         'FIRECRAWL_GATEWAY_URL', 'TOOL_GATEWAY_DOMAIN', 'TOOL_GATEWAY_SCHEME',
-        'TOOL_GATEWAY_USER_TOKEN', 'TAVILY_API_KEY',
+        'TOOL_GATEWAY_USER_TOKEN',
         'BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID', 'BROWSER_USE_API_KEY',
         'FAL_KEY', 'TELEGRAM_BOT_TOKEN', 'DISCORD_BOT_TOKEN',
         'TERMINAL_SSH_HOST', 'TERMINAL_SSH_USER', 'TERMINAL_SSH_KEY',
@@ -1480,7 +1479,7 @@ def _normalize_custom_provider_entry(
         "models_discovered",
         "context_length", "rate_limit_delay",
         "request_timeout_seconds", "stale_timeout_seconds",
-        "discover_models", "extra_body", "extra_headers",
+        "discover_models", "extra_body", "extra_headers", "capabilities",
         "ssl_ca_cert", "ssl_verify",
     }
     for camel, snake in _CAMEL_ALIASES.items():
@@ -1604,6 +1603,16 @@ def _normalize_custom_provider_entry(
 
     if models_discovered:
         normalized["models_discovered"] = True
+
+    capabilities = entry.get("capabilities")
+    if isinstance(capabilities, dict):
+        normalized_capabilities = {
+            key: value
+            for key, value in capabilities.items()
+            if isinstance(key, str) and isinstance(value, bool)
+        }
+        if normalized_capabilities:
+            normalized["capabilities"] = normalized_capabilities
 
     context_length = entry.get("context_length")
     if isinstance(context_length, int) and context_length > 0:
@@ -4378,8 +4387,12 @@ def _env_line_defines_key(
     assigned_key, separator, _value = stripped.partition("=")
     if not separator:
         return False
+    # load_env() strips whitespace around the parsed name, so `KEY = value`
+    # IS a live assignment. The writers must match the same shape, or a
+    # hand-edited spaced line is invisible to save (duplicate appended) and
+    # remove (line survives -> value resurrects on next load). #67488.
     return _env_var_policy_name(
-        assigned_key,
+        assigned_key.strip(),
         is_windows=is_windows,
     ) == _env_var_policy_name(key, is_windows=is_windows)
 
@@ -4817,7 +4830,6 @@ def show_config():
         ("EXA_API_KEY", "Exa"),
         ("PARALLEL_API_KEY", "Parallel"),
         ("FIRECRAWL_API_KEY", "Firecrawl"),
-        ("TAVILY_API_KEY", "Tavily"),
         ("BROWSERBASE_API_KEY", "Browserbase"),
         ("BROWSER_USE_API_KEY", "Browser Use"),
         ("FAL_KEY", "FAL"),

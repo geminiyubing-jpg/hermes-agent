@@ -3916,9 +3916,15 @@ def _ensure_session_db_row(session: dict) -> None:
             parent_session_id=parent_session_id,
             cwd=_persisted_session_cwd(session),
             # Self-describing rows: aggregators that merge multiple profile DBs
-            # into one list can't rely on which file a row came from alone. NULL
-            # means the launch/default profile (matches run_agent's convention).
-            profile_name=Path(profile_home).name if profile_home else None,
+            # into one list can't rely on which file a row came from alone.
+            # Stamp the launch profile explicitly instead of leaving NULL —
+            # NULL is exactly what the #94724 legacy-owner backfill exists to
+            # repair, and rows minted AFTER that one-shot backfill ran stayed
+            # NULL forever: profile-keyed matching then drops them from the
+            # sidebar and deep links can't resolve them (#99222).
+            profile_name=(
+                Path(profile_home).name if profile_home else _current_profile_name()
+            ),
         )
         # A session can be born hidden (session.create hidden=true, or a
         # session.set_hidden that arrived before the row existed): apply the
@@ -4430,7 +4436,9 @@ def _save_cfg(cfg: dict):
 
     from utils import atomic_roundtrip_yaml_save
 
-    path = _hermes_home / "config.yaml"
+    override = get_hermes_home_override()
+    home = Path(override) if isinstance(override, str) and override else _hermes_home
+    path = Path(home) / "config.yaml"
     # Comment-, ordering-, and Unicode-preserving full-state write.
     # Replaces the previous `yaml.safe_dump(cfg, f)` (and later
     # `atomic_config_write`, which is not comment-preserving) which clobbered
@@ -6135,6 +6143,7 @@ def _restore_agent_model_runtime(agent, snapshot: dict | None) -> None:
             api_key=snapshot.get("api_key", ""),
             base_url=snapshot.get("base_url", ""),
             api_mode=snapshot.get("api_mode", ""),
+            capabilities=snapshot.get("capabilities"),
         )
 
 
@@ -6347,6 +6356,7 @@ def _apply_model_switch(
                 api_key=result.api_key,
                 base_url=result.base_url,
                 api_mode=result.api_mode,
+                capabilities=getattr(result, "runtime_capabilities", None),
             )
         except Exception as exc:
             # The in-place swap rolled the agent back to the old working
@@ -6646,7 +6656,8 @@ def _apply_live_compression_config(agent: Any, cfg: dict | None) -> None:
     acted only on PRESENT keys, leaving stale values active forever.
     """
     cfg = cfg if isinstance(cfg, dict) else {}
-    compression = cfg.get("compression") if isinstance(cfg.get("compression"), dict) else {}
+    compression_raw = cfg.get("compression")
+    compression = compression_raw if isinstance(compression_raw, dict) else {}
     model_cfg = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
 
     enabled_raw = compression.get("enabled", True)
@@ -6654,6 +6665,27 @@ def _apply_live_compression_config(agent: Any, cfg: dict | None) -> None:
         agent.compression_enabled = enabled_raw
     else:
         agent.compression_enabled = str(enabled_raw).lower() in {"true", "1", "yes"}
+
+    agent.codex_responses_native_compaction = is_truthy_value(
+        compression.get("codex_responses_native", False)
+    )
+    native_threshold_raw = compression.get(
+        "codex_responses_compact_threshold", 200_000
+    )
+    try:
+        if isinstance(native_threshold_raw, bool):
+            raise ValueError
+        native_threshold = int(native_threshold_raw)
+        if native_threshold <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid compression.codex_responses_compact_threshold=%r; "
+            "using 200000.",
+            native_threshold_raw,
+        )
+        native_threshold = 200_000
+    agent.codex_responses_compact_threshold = native_threshold
 
     # Absence restores the agent_init/config default (0 = disabled).
     idle_raw = compression.get("idle_compact_after_seconds", 0)
@@ -9777,6 +9809,12 @@ def _maybe_schedule_auto_continue(sid: str, session: dict, session_key: str) -> 
     same _run_prompt_submit machinery as every other synthesized turn — so
     the client that just resumed streams it live.
     """
+    # Hosted room turns are recovered by their durable task/lease state
+    # machine. Generic session auto-continue would bypass its execution
+    # generation and can duplicate work after a process restart.
+    if session.get("source") == "bot_room":
+        return None
+
     home = _session_home(session)
     marker = read_turn_marker(home, session_key)
     if marker is None:
@@ -10256,7 +10294,12 @@ def _inflight_snapshot(session: dict) -> dict | None:
 
 
 def _emit_terminal_turn_error(
-    sid: str, session: dict, error: Any, error_surface: Optional[dict] = None
+    sid: str,
+    session: dict,
+    error: Any,
+    error_surface: Optional[dict] = None,
+    *,
+    retire_marker: bool = True,
 ) -> None:
     """Close a failed turn with a terminal ``message.complete`` frame.
 
@@ -10309,7 +10352,8 @@ def _emit_terminal_turn_error(
         rendered = ""
     if rendered:
         payload["rendered"] = rendered
-    _retire_turn_marker(session)
+    if retire_marker:
+        _retire_turn_marker(session)
     _emit("message.complete", sid, payload)
 
 
@@ -12555,6 +12599,7 @@ def _run_prompt_submit(
     display_metadata: dict | None = None,
     image_paths: list[str] | None = None,
     queued_prompt_generation: int | None = None,
+    terminal_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> bool:
     with session["history_lock"]:
         if session.get("_closing"):
@@ -12604,6 +12649,8 @@ def _run_prompt_submit(
     _emit("message.start", sid)
 
     def run():
+        terminal_receipt_attempted = False
+        terminal_receipt_committed = terminal_callback is None
         # The conversation runs on a fresh thread, so ContextVars from the RPC
         # dispatcher do not follow automatically. Rebind the exact transport
         # stored on this session generation before any tool can commission a
@@ -13144,7 +13191,26 @@ def _run_prompt_submit(
                 payload["recoverable"] = True
                 if _error_surface:
                     payload["error_surface"] = _error_surface
-            _retire_turn_marker(session, marker_key)
+            if terminal_callback is not None:
+                terminal_receipt_attempted = True
+                terminal_callback(
+                    {
+                        "status": (
+                            "cancelled"
+                            if status == "interrupted"
+                            else "failed" if status == "error" else "settled"
+                        ),
+                        "text": raw if isinstance(raw, str) else str(raw),
+                        **(
+                            {"error": str(result.get("error") or raw)}
+                            if status == "error" and isinstance(result, dict)
+                            else {}
+                        ),
+                    }
+                )
+                terminal_receipt_committed = True
+            if terminal_receipt_committed:
+                _retire_turn_marker(session, marker_key)
             _emit("message.complete", sid, payload)
 
             # ── /goal continuation (Ralph-style loop) ─────────────────
@@ -13324,11 +13390,25 @@ def _run_prompt_submit(
             # Keep the partial turn available to the next prompt; the durable
             # inflight record still carries the recoverable error state.
             _restore_agent_history_after_turn_error(session, agent)
+            if terminal_callback is not None and not terminal_receipt_attempted:
+                terminal_receipt_attempted = True
+                try:
+                    terminal_callback(
+                        {"status": "failed", "text": "", "error": str(e)}
+                    )
+                    terminal_receipt_committed = True
+                except Exception:
+                    logger.exception("hosted room terminal receipt commit failed")
             try:
                 # Close the turn with the same terminal error frame shape as
                 # the returned-error path (uniform client handling), retaining
                 # the failed turn for resume replay.
-                _emit_terminal_turn_error(sid, session, e)
+                _emit_terminal_turn_error(
+                    sid,
+                    session,
+                    e,
+                    retire_marker=terminal_receipt_committed,
+                )
                 turn_error_retained = True
             except Exception as emit_exc:
                 print(
@@ -13423,7 +13503,10 @@ def _run_prompt_submit(
             )
             # Backstop for turns that never reached a terminal frame (the
             # frame paths retire the marker as they emit).
-            _retire_turn_marker(session, marker_key)
+            if terminal_receipt_committed:
+                _retire_turn_marker(session, marker_key)
+                with session["history_lock"]:
+                    session.pop("_hosted_room_task", None)
             session.pop("_auto_continue_scheduled", None)
             _emit_settled_session_info(sid, session, agent)
 
@@ -13844,6 +13927,7 @@ def _respond(rid, params, key, *, allow_expired=False):
 # opt/model-resolution-core PR touches its body; move it to methods_config.py
 # in a follow-up once that PR lands.
 @method("config.set")
+@_profile_scoped
 def _(rid, params: dict) -> dict:
     key, value = params.get("key", ""), params.get("value", "")
     session = _sessions.get(params.get("session_id", ""))
