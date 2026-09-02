@@ -37,7 +37,7 @@ except ImportError:
     except ImportError:
         msvcrt = None
 from pathlib import Path
-from typing import Any, List, Optional, Protocol
+from typing import Any, Callable, List, Optional, Protocol
 
 # Add parent directory to path for imports BEFORE repo-level imports.
 # Without this, standalone invocations (e.g. after `hermes update` reloads
@@ -77,7 +77,8 @@ def _close_late_session_db_result(future: "concurrent.futures.Future") -> None:
     try:
         db = future.result()
         if db is not None:
-            db.close()
+            from hermes_state import release_or_close
+            release_or_close(db)
     except Exception:
         pass
 
@@ -206,6 +207,91 @@ def _detect_gateway_code_skew() -> tuple[str, str] | None:
         return None
 
 
+class CronTickYielded(RuntimeError):
+    """A stale-code ticker yielded this tick to a fresh gateway.
+
+    Raised by ``tick()`` BEFORE the tick lock is acquired when the process is
+    provably running stale code (boot fingerprint ≠ disk), it does NOT own the
+    gateway runtime lock, and that lock is held by another (fresh) process.
+    Fresh code picks the job up within one tick interval, so the stale process
+    must stay out of the dispatch race entirely — including lock contention,
+    which would otherwise starve the fresh ticker on a busy minute.
+
+    Raised instead of returned so the provider loops
+    (``cron/scheduler_provider.py``) record it via ``record_ticker_error`` and
+    mark the heartbeat ``success=False``: a yielded tick is NOT a healthy tick
+    (``hermes cron status`` must not show green while jobs only fire from the
+    other process). Liveness stays visible — the loop keeps beating and keeps
+    yielding; if the fresh gateway dies, its lock releases and the stale
+    ticker's next tick proceeds normally (self-healing, no restart needed).
+
+    Skew detection returning ``None`` (non-git install, no boot fingerprint —
+    e.g. a one-shot CLI tick, or any probe failure) never yields: yield only
+    on certainty, fail open otherwise.
+    """
+
+    def __init__(self, boot_rev: str, disk_rev: str) -> None:
+        self.boot_rev = boot_rev
+        self.disk_rev = disk_rev
+        super().__init__(
+            f"Cron tick yielded to a fresh gateway process (stale code: "
+            f"booted on {boot_rev}, disk is at {disk_rev})"
+        )
+
+
+# Log the yield at most once per episode: a stale ticker that keeps yielding
+# for hours must not spam the error log every interval. Reset when the
+# condition clears (proceeds without yielding) or the skew changes.
+_YIELD_LOG_INTERVAL_SECONDS = 3600.0
+_last_yield_log: dict[str, object] = {}
+
+
+def _should_yield_tick_to_fresh_gateway() -> tuple[str, str] | None:
+    """Decide whether this tick must yield to a fresher gateway process.
+
+    Returns the ``(boot_rev, disk_rev)`` skew labels when ALL of: this process
+    has a boot fingerprint that differs from the checkout on disk (code
+    skew), it does not own the gateway runtime lock, and some other process
+    currently holds that lock — i.e. a fresh gateway is alive and will
+    dispatch due jobs itself. Returns ``None`` otherwise.
+
+    Every probe failure returns ``None``: the gateway-status import, the lock
+    probe, and skew detection are each individually fail-open. Yielding is a
+    certainty claim, never a guess.
+    """
+    skew = _detect_gateway_code_skew()
+    if skew is None:
+        return None
+    try:
+        from gateway import status as _gateway_status
+    except Exception:
+        return None
+    try:
+        if _gateway_status.owns_gateway_runtime_lock():
+            return None
+        if not _gateway_status.is_gateway_runtime_lock_active():
+            return None
+    except Exception:
+        return None
+    return skew
+
+
+def _log_tick_yield_once(reason: str) -> None:
+    """Log the yield at error level once per episode (skew signature)."""
+    global _last_yield_log
+    now = time.monotonic()
+    last_reason = _last_yield_log.get("reason")
+    last_at = _last_yield_log.get("at", 0.0)
+    if last_reason != reason or (now - float(last_at)) >= _YIELD_LOG_INTERVAL_SECONDS:
+        logger.error(
+            "Cron tick yielded: this process is running stale code (%s) and a "
+            "fresher gateway owns the runtime lock — jobs will fire from that "
+            "process. Restart this one to reclaim its ticks.",
+            reason,
+        )
+    _last_yield_log = {"reason": reason, "at": now}
+
+
 def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     """Return a compact one-line failure message for chat delivery.
 
@@ -308,20 +394,6 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
             "activity for the configured inactivity window. Not a provider or "
             "fallback-chain issue; check what the job was doing when it went "
             "quiet. Full details saved in cron output."
-        )
-
-    # Sibling scheduler-side timeout (#79768): the TERMINAL_CWD lock-wait
-    # abort also phrases itself with "Timed out ..." and would fall through
-    # to the generic provider-timeout branch below. Like the inactivity
-    # watchdog above, it is entirely scheduler-internal — no provider or
-    # fallback chain involved — so classify it before the generic match.
-    if "terminal_cwd" in lower and ("lock" in lower or "timed out" in lower):
-        return (
-            f"⚠️ Cron '{job_name}' failed: could not acquire the scheduler's "
-            "working-directory lock — another cron job (a workdir writer or "
-            "long-running readers) held it too long. Not a provider or "
-            "fallback-chain issue; stagger the holder's schedule or remove "
-            "its workdir. Full details saved in cron output."
         )
 
     if provider_reachable and (
@@ -1305,118 +1377,33 @@ def _consume_interrupted_flag(job_id: str, token: Optional[object] = None) -> bo
         return hit
 
 
-# Sequential (env-mutating) cron jobs — workdir jobs that touch
-# process-global runtime state — must run one at a time, but must NOT block the
-# ticker thread.  A persistent single-thread executor preserves ordering across
-# ticks while keeping dispatch fire-and-forget, the same as the parallel pool.
-_sequential_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+def _inactivity_watchdog_loop(
+    *,
+    get_idle_seconds: Callable[[], float],
+    limit_s: float,
+    poll_s: float,
+    stop: threading.Event,
+    future_done: Callable[[], bool],
+) -> bool:
+    """Poll job idle time until the limit, stop, or the watched future completes.
 
-
-class _ReadWriteLock:
-    """Writer-preferring readers-writer lock.
-
-    Guards the process-global ``os.environ["TERMINAL_CWD"]`` override that a
-    workdir cron job applies for the whole of its agent run.  Workdir jobs are
-    writers: they mutate the shared env and need exclusive access.  Workdir-less
-    jobs are readers: they only observe ``TERMINAL_CWD`` (indirectly, via the
-    terminal / file / code-exec tools), so any number of them may run
-    concurrently with each other, but none may run alongside a writer — that is
-    exactly what stops a workdir-less job from picking up another job's workdir
-    override and running its commands in the wrong directory.
-
-    Writer preference bounds the wait for a workdir job (dispatched on the
-    single-thread sequential pool) so a stream of workdir-less readers cannot
-    starve it.
+    Driven by ``threading.Event.wait`` (a kernel timeout), not asyncio, so a
+    blocked event-loop / ``run_job`` thread cannot disable this watchdog the
+    way ``asyncio.sleep`` / ``wait_for`` would (family A of #94285 — the
+    4118s-idle-on-a-600s-limit cron hang). Returns True when *limit_s* of
+    inactivity was observed.
     """
+    while not stop.wait(poll_s):
+        if future_done():
+            return False
+        try:
+            idle = float(get_idle_seconds() or 0.0)
+        except Exception:
+            idle = 0.0
+        if idle >= limit_s:
+            return True
+    return False
 
-    def __init__(self) -> None:
-        self._cond = threading.Condition(threading.Lock())
-        self._readers = 0
-        self._writer_active = False
-        self._writers_waiting = 0
-
-    def acquire_read(self, timeout: float | None = None) -> bool:
-        """Acquire a read lock.
-
-        Returns ``True`` if the lock was acquired, ``False`` on timeout.
-        A timed-out caller proceeds without the lock (degraded mode) —
-        see the call-site in ``run_job`` for the logging / trade-off.
-        """
-        deadline = (
-            time.monotonic() + timeout if timeout is not None else None
-        )
-        with self._cond:
-            while self._writer_active or self._writers_waiting > 0:
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        self._cond.notify_all()
-                        return False
-                    self._cond.wait(timeout=remaining)
-                else:
-                    self._cond.wait()
-            self._readers += 1
-        return True
-
-    def release_read(self) -> None:
-        with self._cond:
-            self._readers -= 1
-            if self._readers == 0:
-                self._cond.notify_all()
-
-    def acquire_write(self, timeout: float | None = None) -> bool:
-        """Acquire a write lock.
-
-        Returns ``True`` if the lock was acquired, ``False`` on timeout.
-        A timed-out caller proceeds without the lock (degraded mode).
-        """
-        deadline = (
-            time.monotonic() + timeout if timeout is not None else None
-        )
-        with self._cond:
-            self._writers_waiting += 1
-            try:
-                while self._writer_active or self._readers > 0:
-                    if deadline is not None:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            self._cond.notify_all()
-                            return False
-                        self._cond.wait(timeout=remaining)
-                    else:
-                        self._cond.wait()
-            finally:
-                self._writers_waiting -= 1
-            self._writer_active = True
-        return True
-
-    def release_write(self) -> None:
-        with self._cond:
-            self._writer_active = False
-            self._cond.notify_all()
-
-
-# Serializes the per-job TERMINAL_CWD override against every other concurrently
-# running cron job.  See _ReadWriteLock and run_job for the usage contract.
-_terminal_cwd_lock = _ReadWriteLock()
-
-# Ceiling on how long a cron job waits for the TERMINAL_CWD lock before
-# FAILING (fail-closed, #79768). Derived from the cron inactivity limit
-# (HERMES_CRON_TIMEOUT, default 600s): a wedged lock holder stops touching
-# its activity clock, so the inactivity monitor usually reaps it and the
-# lock is released within roughly that limit. The bound is measured from
-# the WAITER's arrival, so a holder that wedges late (or hangs in pre-agent
-# setup before the monitor arms) can still outlive it — waiters then fail
-# loudly rather than run: proceeding without the lock lets the holder's
-# process-global TERMINAL_CWD override leak into this job's shell/file/
-# code-exec commands (wrong-directory execution — the exact corruption
-# _ReadWriteLock exists to prevent, see
-# test_reader_never_observes_writer_override). A healthy long-running
-# workdir job past the bound also fails its waiters loudly rather than
-# corrupting them silently; the failure names the holder pattern so the fix
-# (stagger schedules / drop the workdir) is actionable.
-_CWD_LOCK_TIMEOUT_FLOOR_SECONDS = 120.0
-_CWD_LOCK_TIMEOUT_MARGIN_SECONDS = 60.0
 
 
 def _cron_inactivity_seconds() -> float:
@@ -1437,17 +1424,6 @@ def _cron_inactivity_seconds() -> float:
         return 600.0
 
 
-def _cwd_lock_timeout_seconds() -> float:
-    """Bound for the TERMINAL_CWD lock wait: inactivity limit + margin."""
-    inactivity = _cron_inactivity_seconds()
-    if inactivity <= 0:  # 0 = unlimited job runtime; keep the wait bounded.
-        inactivity = 600.0
-    return (
-        max(inactivity, _CWD_LOCK_TIMEOUT_FLOOR_SECONDS)
-        + _CWD_LOCK_TIMEOUT_MARGIN_SECONDS
-    )
-
-
 def _get_parallel_pool(max_workers: Optional[int]) -> concurrent.futures.ThreadPoolExecutor:
     """Return (or create) the persistent parallel pool."""
     global _parallel_pool, _parallel_pool_max_workers
@@ -1462,33 +1438,14 @@ def _get_parallel_pool(max_workers: Optional[int]) -> concurrent.futures.ThreadP
     return _parallel_pool
 
 
-def _get_sequential_pool() -> concurrent.futures.ThreadPoolExecutor:
-    """Return (or create) the persistent single-thread sequential pool.
-
-    A single worker guarantees env-mutating jobs never overlap, even
-    across ticks: a job queued by a newer tick waits for the previous tick's
-    sequential jobs to finish rather than corrupting their os.environ
-    state.
-    """
-    global _sequential_pool
-    if _sequential_pool is None:
-        _sequential_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix="cron-seq",
-        )
-    return _sequential_pool
-
-
 def _shutdown_parallel_pool() -> None:
-    """Shut down the persistent pools on process exit."""
-    global _parallel_pool, _parallel_pool_max_workers, _sequential_pool
+    """Shut down the persistent pool on process exit."""
+    global _parallel_pool, _parallel_pool_max_workers
     if _parallel_pool is not None:
         _parallel_pool.shutdown(wait=True, cancel_futures=False)
         _parallel_pool = None
         _parallel_pool_max_workers = None
-    if _sequential_pool is not None:
-        _sequential_pool.shutdown(wait=True, cancel_futures=False)
-        _sequential_pool = None
+
 
 
 atexit.register(_shutdown_parallel_pool)
@@ -3027,7 +2984,7 @@ def _send_media_via_adapter(
     return errors
 
 
-def _confirm_adapter_delivery(send_result) -> bool:
+def _confirm_adapter_delivery(send_result, job_id: str = "?", unverified: Optional[list] = None) -> bool:
     """Return True only if ``send_result`` unambiguously confirms delivery.
 
     A live adapter that returns ``None`` (e.g. a swallowed exception, a busy
@@ -3036,16 +2993,54 @@ def _confirm_adapter_delivery(send_result) -> bool:
     scheduler to log ``"delivered to <chat> via live adapter"`` while the
     gateway never actually sees the message (#47056).
 
-    Likewise, an object missing a ``success`` attribute (e.g. a bare ``dict``
-    or a partial mock) is a contract violation: it does not actually tell us
-    whether the send succeeded.  Require an explicit, truthy ``success``
-    attribute to count as confirmed.
+    Likewise, a result carrying no ``success`` at all (a partial mock, or a
+    ``dict`` from a code path that never reached the adapter) is a contract
+    violation: it does not actually tell us whether the send succeeded.
+    Require an explicit, truthy ``success`` to count as confirmed.
+
+    Both shapes are inspected the same way, because ``_deliver_to_platform``
+    returns either a ``SendResult`` object or a plain ``dict``:
+
+    * ``delivered is False`` is a REJECTION even when ``success`` is truthy.
+      The silence-narration filter returns
+      ``{"success": True, "delivered": False}`` — a successfully *dropped*
+      message, not a delivered one.  Reading only ``success`` there is how a
+      cron brief was logged as delivered while the user got nothing (#77763).
+    * No ``message_id`` and no ``raw_response`` means we have no positive
+      evidence of a send.  That is not proof of failure either (some adapters
+      legitimately return a bare success), so it is still accepted — but
+      logged at WARNING so an UNVERIFIED delivery is visible in the log
+      instead of masquerading as a confirmed one.  Telegram ``SendResult``
+      objects carry ``message_id``; the dict-filter shape does not.
     """
     if send_result is None:
         return False
-    if not hasattr(send_result, "success"):
+    if isinstance(send_result, dict):
+        if "success" not in send_result:
+            return False
+        success = bool(send_result.get("success"))
+        delivered = send_result.get("delivered")
+        message_id = send_result.get("message_id")
+        raw_response = send_result.get("raw_response")
+    else:
+        if not hasattr(send_result, "success"):
+            return False
+        success = bool(getattr(send_result, "success"))
+        delivered = getattr(send_result, "delivered", None)
+        message_id = getattr(send_result, "message_id", None)
+        raw_response = getattr(send_result, "raw_response", None)
+    if not success or delivered is False:
         return False
-    return bool(getattr(send_result, "success"))
+    if message_id is None and not raw_response:
+        logger.warning(
+            "Job '%s': live adapter reported success with no delivery evidence "
+            "(no message_id, no raw_response) — treating as delivered but "
+            "UNVERIFIED",
+            job_id,
+        )
+        if unverified is not None:
+            unverified.append(True)
+    return True
 
 
 def _is_channel_dm_topic(
@@ -3104,6 +3099,48 @@ def _is_channel_dm_topic(
     return is_channel
 
 
+def _cron_delivery_notify_enabled(cfg: Optional[dict]) -> bool:
+    """Resolve ``cron.delivery.notify`` (config.yaml). Default True.
+
+    Only an explicit boolean ``False`` (or a YAML ``false``/``off`` that parses
+    to it) disables the push notification; a missing/malformed section keeps
+    the default so a typo can never silently make cron briefs silent.
+    """
+    try:
+        cron_cfg = (cfg or {}).get("cron")
+        if not isinstance(cron_cfg, dict):
+            return True
+        delivery_cfg = cron_cfg.get("delivery")
+        if not isinstance(delivery_cfg, dict):
+            return True
+        return delivery_cfg.get("notify", True) is not False
+    except Exception:
+        return True
+
+
+def _record_delivery_verification(job: dict, unverified_targets: list) -> None:
+    """Persist the UNVERIFIED-delivery marker on the job record.
+
+    ``last_delivery_unverified`` is a list of ``platform:chat_id`` targets
+    whose live adapter acked the send with no message_id/raw_response, or
+    ``None`` once a run delivered with positive evidence (or to no live
+    target). Skips the write when nothing changed so the common verified
+    path costs no jobs.json save. Never raises — status bookkeeping must not
+    fail a delivery.
+    """
+    new_value = list(unverified_targets) or None
+    if (job.get("last_delivery_unverified") or None) == new_value:
+        return
+    try:
+        from cron.jobs import update_job
+
+        update_job(job["id"], {"last_delivery_unverified": new_value})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug(
+            "Job '%s': could not record delivery verification: %s", job.get("id"), exc,
+        )
+
+
 def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Optional[str]:
     """
     Deliver job output to the configured target(s) (origin chat, specific platform, etc.).
@@ -3150,6 +3187,18 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
         wrap_response = user_cfg.get("cron", {}).get("wrap_response", True)
     except Exception:
         pass
+
+    # cron.delivery.notify (default True): mark live-adapter cron sends as
+    # FINAL notifications so the platform pushes them (Telegram's "important"
+    # mode otherwise sends with disable_notification=True). Configurable so
+    # operators who prefer silent briefs can opt back out.
+    notify_delivery = _cron_delivery_notify_enabled(user_cfg)
+    # Set when a live adapter acked a send with NO delivery evidence (no
+    # message_id / raw_response — the Slack/Matrix/Mattermost bare
+    # SendResult(success=True) shape). Persisted on the job as
+    # ``last_delivery_unverified`` so `hermes cron list` shows the state
+    # instead of it living only in a WARNING log line.
+    unverified_targets: list = []
 
     if wrap_response:
         task_name = job.get("name", job["id"])
@@ -3526,10 +3575,14 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                 route_metadata = {
                     "direct_messages_topic_id": str(thread_id),
                     "job_id": job["id"],
+                    "notify": notify_delivery,
                 }
                 # Media metadata mirrors the text routing so attachments land in
                 # the same DM topic instead of the General lane (#22773).
-                media_metadata = {"direct_messages_topic_id": str(thread_id)}
+                media_metadata = {
+                    "direct_messages_topic_id": str(thread_id),
+                    "notify": notify_delivery,
+                }
             else:
                 # Forum-style topic (private chat / supergroup) or non-topic
                 # target: route via message_thread_id (#52060).  Put thread_id in
@@ -3540,10 +3593,12 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                 # anchor, so the metadata key bypasses that check and lets the
                 # adapter route via a plain message_thread_id.
                 route_thread_id = str(thread_id) if thread_id is not None else None
-                route_metadata = {"job_id": job["id"]}
+                route_metadata = {"job_id": job["id"], "notify": notify_delivery}
                 if route_thread_id:
                     route_metadata["thread_id"] = route_thread_id
-                media_metadata = {"thread_id": thread_id} if thread_id else None
+                media_metadata = {"notify": notify_delivery}
+                if thread_id:
+                    media_metadata["thread_id"] = thread_id
 
             # Relay egress needs a tenant discriminator on the frame: the
             # connector's fail-closed guard resolves the workspace/guild from
@@ -3573,7 +3628,20 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                 adapter_ok = True
                 timed_out = False
                 delivered_message_id = None
-                if text_to_send:
+                if not text_to_send and not media_files:
+                    # Nothing to hand the adapter at all.  This used to fall
+                    # straight through to the `if adapter_ok:` branch below and
+                    # log "delivered to <chat> via live adapter" for a send that
+                    # never happened (#77763).  Fail closed so the run reports
+                    # the empty payload instead.
+                    msg = (
+                        f"live adapter send skipped (empty text and no media) "
+                        f"for {platform_name}:{chat_id}"
+                    )
+                    logger.warning("Job '%s': %s", job["id"], msg)
+                    target_errors.append(msg)
+                    adapter_ok = False
+                elif text_to_send:
                     from agent.async_utils import safe_schedule_threadsafe
 
                     router = DeliveryRouter(config, adapters)
@@ -3666,19 +3734,32 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                             # {"success": True, "delivered": False, ...}.
                             # Normalize both shapes so a getattr default doesn't
                             # misread a dict, and so a None / success-less object
-                            # is NOT counted as delivered (#47056).
+                            # is NOT counted as delivered (#47056).  The
+                            # confirmation itself handles both shapes: a truthy
+                            # `success` with `delivered: False` is a drop, not a
+                            # delivery (#77763).
                             if isinstance(send_result, dict):
-                                send_success = bool(send_result.get("success", False))
                                 send_raw_response = send_result.get("raw_response")
                                 delivered_message_id = send_result.get("message_id")
                             else:
-                                send_success = _confirm_adapter_delivery(send_result)
                                 send_raw_response = getattr(send_result, "raw_response", None)
                                 delivered_message_id = getattr(send_result, "message_id", None)
+                            _evidence_gap: list = []
+                            send_success = _confirm_adapter_delivery(
+                                send_result, job["id"], _evidence_gap,
+                            )
+                            if send_success and _evidence_gap:
+                                unverified_targets.append(f"{platform_name}:{chat_id}")
 
                             if not send_success:
                                 if isinstance(send_result, dict):
-                                    err = send_result.get("error", "unknown")
+                                    # A filtered drop carries no "error" — name
+                                    # the filter instead of reporting "unknown".
+                                    err = (
+                                        send_result.get("error")
+                                        or send_result.get("filtered")
+                                        or "unknown"
+                                    )
                                     shape = "dict"
                                 elif send_result is not None:
                                     err = getattr(send_result, "error", None)
@@ -3755,7 +3836,16 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                     delivery_errors.append(msg)
 
                 if adapter_ok:
-                    logger.info("Job '%s': delivered to %s:%s via live adapter", job["id"], platform_name, chat_id)
+                    # Log WHERE it went, not just that it went: a ghost delivery
+                    # that landed in the wrong lane (General topic instead of the
+                    # routed thread) is indistinguishable from a real one without
+                    # the routing identity (#77763).
+                    logger.info(
+                        "Job '%s': delivered to %s:%s via live adapter thread=%s message_id=%s",
+                        job["id"], platform_name, chat_id,
+                        route_thread_id if route_thread_id is not None else "-",
+                        delivered_message_id if delivered_message_id is not None else "-",
+                    )
                     delivered = True
                     # Seed the thread session only now that delivery into it
                     # succeeded (deferred from thread-open above).
@@ -3869,6 +3959,22 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                 target_errors.append(msg)
                 delivery_errors.extend(target_errors)
                 continue
+            # The live lane already failed closed on an empty payload; the
+            # standalone senders do not. The Telegram adapter returns
+            # SendResult(success=True) for empty content WITHOUT an API call,
+            # so falling through here turns a phantom live delivery into a
+            # phantom standalone one and logs it as delivered (#77763). Both
+            # _send_to_platform call sites below are reached through this
+            # point, so one guard closes the lane.
+            if not cleaned_delivery_content.strip() and not media_files:
+                msg = (
+                    f"standalone send skipped (empty text and no media) "
+                    f"for {platform_name}:{chat_id}"
+                )
+                logger.warning("Job '%s': %s", job["id"], msg)
+                target_errors.append(msg)
+                delivery_errors.extend(target_errors)
+                continue
             # Standalone path: run the async send in a fresh event loop (safe from any thread)
             coro = _send_to_platform(platform, pconfig, chat_id, cleaned_delivery_content, thread_id=thread_id, media_files=media_files)
             try:
@@ -3958,6 +4064,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
     if policy_drop_errors:
         # Filter-time drops apply to every target; report them once.
         delivery_errors.extend(policy_drop_errors)
+    _record_delivery_verification(job, unverified_targets)
     if delivery_errors:
         return "; ".join(delivery_errors)
     return None
@@ -5528,6 +5635,7 @@ def run_job(
     defer_agent_teardown: Optional[list] = None,
     extra_prompt: Optional[str] = None,
     cancel_event: Optional[_CancelEventLike] = None,
+    execution_id: Optional[str] = None,
 ) -> tuple[bool, str, str, Optional[str]]:
     """
     Execute a single cron job.
@@ -5551,6 +5659,24 @@ def run_job(
     """
     job_id = job["id"]
     job_name = str(job.get("name") or job.get("prompt") or job_id or "cron job")
+
+    # Fail closed on a corrupt config.yaml before any agent-driven work
+    # (issue #81952): a cron fire is fully non-interactive, and continuing
+    # on built-in defaults lets provider auto-detection adopt .env
+    # credentials the config never named, billing a provider the user did
+    # not choose. no_agent script jobs are exempt — they never construct an
+    # AIAgent or spend tokens. Escape hatch: HERMES_IGNORE_USER_CONFIG=1.
+    if not job.get("no_agent"):
+        from hermes_cli.config import (
+            InvalidUserConfigError,
+            require_parseable_user_config,
+        )
+
+        try:
+            require_parseable_user_config()
+        except InvalidUserConfigError as exc:
+            logger.error("Job '%s': refusing to run — %s", job_id, exc)
+            return (False, f"# Cron Job: {job_name}\n\nError: {exc}\n", "", str(exc))
 
     # ---------------------------------------------------------------
     # no_agent short-circuit — the script IS the job, no LLM involvement.
@@ -5892,68 +6018,25 @@ def run_job(
     for _var_name in _cron_delivery_vars:
         _VAR_MAP[_var_name].set("")
 
-    # Per-job working directory — _SESSION_CWD was already set via
-    # set_session_vars(cwd=...) above. Here we only handle the
-    # process-global TERMINAL_CWD env var, which is serialized by
-    # _terminal_cwd_lock to avoid leaking into concurrent jobs.
-    #
-    # os.environ["TERMINAL_CWD"] is process-global, so this override is
-    # serialized by _terminal_cwd_lock (acquired just below): a workdir job
-    # holds it as a writer for its whole run, excluding every other job, while
-    # workdir-less jobs hold it as readers and stay parallel with each other.
-    # The sequential pool only keeps workdir jobs from overlapping EACH OTHER;
-    # the lock is what additionally keeps a concurrently-firing workdir-less
-    # parallel-pool job from observing this override and running its shell /
-    # file / code-exec commands in the wrong directory.  For workdir-less jobs
-    # we leave TERMINAL_CWD untouched — preserves the original behaviour
-    # (skip_context_files=True, tools use whatever cwd the scheduler has).
-    #
-    # The critical path (resolve_context_cwd / build_context_files_prompt)
-    # checks _SESSION_CWD first, so gateway sessions with no override see
-    # their own cwd, not the cron's workdir (#69396).
-
-    # Snapshot the current env value BEFORE acquiring the lock so the finally
-    # below can always restore it, even if an exception fires before we set the
-    # override inside the try.  This read can't leak the lock (it precedes the
-    # acquire) and is a no-op for workdir-less jobs (they never mutate the env).
-    _prior_terminal_cwd = os.environ.get("TERMINAL_CWD", "_UNSET_")
-
-    _holds_cwd_write = _job_workdir is not None
-    _cwd_lock_timeout = _cwd_lock_timeout_seconds()
-    _cwd_lock_acquired = True
-    if _holds_cwd_write:
-        if not _terminal_cwd_lock.acquire_write(timeout=_cwd_lock_timeout):
-            _cwd_lock_acquired = False
-    else:
-        if not _terminal_cwd_lock.acquire_read(timeout=_cwd_lock_timeout):
-            _cwd_lock_acquired = False
-
-    # Everything after the acquire MUST live inside this try, so the finally
-    # below always releases the lock even if the env override or any later
-    # statement raises.  A leaked writer would deadlock the whole scheduler
-    # (every future job blocks on acquire_*); a leaked reader blocks all
-    # future writers.  Acquire itself can't leak (it either blocks or returns).
+    # Tool calls are keyed by a per-run task id. Bind the cron workdir to that
+    # identity instead of mutating process-global TERMINAL_CWD. The session CWD
+    # record is the tool-layer authority for terminal/file/code-exec/delegation,
+    # while the _SESSION_CWD ContextVar above remains the prompt/context-file
+    # authority. Both are isolated across concurrent cron runs.
+    _cron_task_id = (
+        f"cron:{job_id}:"
+        f"{execution_id or job.get('execution_id') or uuid.uuid4().hex}"
+    )
+    from tools.terminal_tool import clear_session_cwd as _clear_tool_session_cwd
+    from tools.terminal_tool import record_session_cwd as _record_tool_session_cwd
+    if _job_workdir:
+        _record_tool_session_cwd(_cron_task_id, _job_workdir)
     _cron_session_var = _VAR_MAP["HERMES_CRON_SESSION"]
     _cron_session_token = None
     _non_dispatcher_token = None
     _session_db = None
     try:
-        if not _cwd_lock_acquired:
-            # Fail closed (#79768): running without the lock would let a
-            # concurrent workdir job's process-global TERMINAL_CWD override
-            # leak into this job's shell/file/code-exec commands — silent
-            # wrong-directory execution, the exact corruption the lock
-            # exists to prevent. A loud failure is recoverable (next tick /
-            # manual rerun); a job that ran in the wrong directory is not.
-            raise TimeoutError(
-                f"Timed out waiting for the TERMINAL_CWD "
-                f"{'write' if _holds_cwd_write else 'read'} lock after "
-                f"{_cwd_lock_timeout:.0f}s — another cron job (a workdir "
-                f"writer, or long-running readers) has held it for longer "
-                f"than the cron inactivity limit. If a workdir job is the "
-                f"holder, stagger its schedule or remove its workdir to "
-                f"unblock this job (#79768)."
-            )
+
         # Scope cron approval policy to this job. Keep the token so the finally
         # restores the pre-job state instead of pinning an explicit empty value,
         # which would suppress the legacy os.environ fallback used by standalone
@@ -5980,8 +6063,7 @@ def run_job(
         # at the run_conversation hop carries this into the agent thread.
         _non_dispatcher_token = enter_non_dispatcher_owned_context()
         if _job_workdir:
-            os.environ["TERMINAL_CWD"] = _job_workdir
-            logger.info("Job '%s': using workdir %s", job_id, _job_workdir)
+            logger.info("Job '%s': using task-scoped workdir %s", job_id, _job_workdir)
 
         # Re-read .env and config.yaml fresh every run so provider/key
         # changes take effect without a gateway restart. Route through
@@ -6468,7 +6550,7 @@ def run_job(
         # run forever.
         _session_db_timeout = _get_session_db_timeout()
         try:
-            from hermes_state import SessionDB
+            from hermes_state import get_shared_session_db
 
             if _session_db_timeout > 0:
                 _session_db_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -6479,7 +6561,7 @@ def run_job(
                 # silently falling back to the process-global default.
                 _session_db_context = contextvars.copy_context()
                 _session_db_future = _session_db_pool.submit(
-                    _session_db_context.run, SessionDB
+                    _session_db_context.run, get_shared_session_db
                 )
                 try:
                     _session_db = _session_db_future.result(timeout=_session_db_timeout)
@@ -6500,7 +6582,7 @@ def run_job(
                     _session_db_pool.shutdown(wait=False)
             else:
                 # 0 = unlimited (legacy behavior, opt-in for debugging)
-                _session_db = SessionDB()
+                _session_db = get_shared_session_db()
         except concurrent.futures.TimeoutError:
             logger.error(
                 "Job '%s': SessionDB init did not return within %.0fs — proceeding "
@@ -6611,26 +6693,51 @@ def run_job(
         # Tag this fire and time the run_conversation call for the usage_audit.jsonl entry.
         _audit_fire_id = uuid.uuid4().hex
         _audit_t_start = time.monotonic()
-        _cron_future = _cron_pool.submit(_cron_context.run, agent.run_conversation, prompt)
+        _cron_future = _cron_pool.submit(
+            _cron_context.run,
+            agent.run_conversation,
+            prompt,
+            task_id=_cron_task_id,
+        )
         _inactivity_timeout = False
-        try:
+        _watch_stop = threading.Event()
+
+        def _idle_seconds() -> float:
+            if not hasattr(agent, "get_activity_summary"):
+                return 0.0
+            try:
+                _act = agent.get_activity_summary()
+                return float(_act.get("seconds_since_activity", 0.0) or 0.0)
+            except Exception:
+                return 0.0
+
+        def _watch_inactivity() -> None:
+            nonlocal _inactivity_timeout
             if _cron_inactivity_limit is None:
-                # Unlimited — no inactivity watchdog, but a one-shot still
-                # needs its run_claim heartbeat, so poll instead of blocking.
-                if _is_oneshot or cancel_event is not None:
-                    result = None
-                    while True:
-                        done, _ = concurrent.futures.wait(
-                            {_cron_future}, timeout=_POLL_INTERVAL,
-                        )
-                        if done:
-                            _abort_if_fire_claim_lost()
-                            result = _cron_future.result()
-                            break
-                        _abort_if_fire_claim_lost()
-                        _heartbeat_run_claim_if_due()
-                else:
-                    result = _cron_future.result()
+                return
+            if _inactivity_watchdog_loop(
+                get_idle_seconds=_idle_seconds,
+                limit_s=_cron_inactivity_limit,
+                poll_s=_POLL_INTERVAL,
+                stop=_watch_stop,
+                future_done=_cron_future.done,
+            ):
+                _inactivity_timeout = True
+
+        _watch_thread = threading.Thread(
+            target=_watch_inactivity,
+            name=f"cron-inactivity-{str(job_id)[:8]}",
+            daemon=True,
+        )
+        try:
+            if _cron_inactivity_limit is not None:
+                # Daemon thread: kernel ``Event.wait`` timeout, independent of
+                # the ``run_job`` thread. A blocked loop / hung
+                # ``get_activity_summary`` on this thread can no longer keep
+                # the 600s inactivity limit from firing (#94285).
+                _watch_thread.start()
+            if _cron_inactivity_limit is None and not _is_oneshot and cancel_event is None:
+                result = _cron_future.result()
             else:
                 result = None
                 while True:
@@ -6641,23 +6748,15 @@ def run_job(
                         _abort_if_fire_claim_lost()
                         result = _cron_future.result()
                         break
+                    if _inactivity_timeout:
+                        break
                     _abort_if_fire_claim_lost()
                     _heartbeat_run_claim_if_due()
-                    # Agent still running — check inactivity.
-                    _idle_secs = 0.0
-                    if hasattr(agent, "get_activity_summary"):
-                        try:
-                            _act = agent.get_activity_summary()
-                            _idle_secs = _act.get("seconds_since_activity", 0.0)
-                        except Exception:
-                            pass
-                    if _idle_secs >= _cron_inactivity_limit:
-                        _inactivity_timeout = True
-                        break
         except Exception:
             _cron_pool.shutdown(wait=False, cancel_futures=True)
             raise
         finally:
+            _watch_stop.set()
             _cron_pool.shutdown(wait=False, cancel_futures=True)
 
         if _inactivity_timeout:
@@ -6863,23 +6962,7 @@ def run_job(
         return False, output, "", error_msg
 
     finally:
-        # Restore TERMINAL_CWD to whatever it was before this job ran.  We
-        # only ever mutate it when the job has a workdir AND actually held
-        # the write lock — a fail-closed timeout raised before the env-set,
-        # so restoring there would replay a pre-wait snapshot over the
-        # ACTIVE holder's live override.
-        if _job_workdir and _cwd_lock_acquired:
-            if _prior_terminal_cwd == "_UNSET_":
-                os.environ.pop("TERMINAL_CWD", None)
-            else:
-                os.environ["TERMINAL_CWD"] = _prior_terminal_cwd
-        # Release the cwd lock now that the env is restored, so a waiting
-        # workdir job (or queued reader) can proceed without seeing the override.
-        if _cwd_lock_acquired:
-            if _holds_cwd_write:
-                _terminal_cwd_lock.release_write()
-            else:
-                _terminal_cwd_lock.release_read()
+        _clear_tool_session_cwd(_cron_task_id)
         # Clean up ContextVar session/delivery state for this job.
         # clear_session_vars also clears _SESSION_CWD internally, so no
         # separate clear_session_cwd() call is needed.
@@ -6994,7 +7077,8 @@ def run_job(
             except (Exception, KeyboardInterrupt) as e:
                 logger.debug("Job '%s': failed to end session: %s", job_id, e)
             try:
-                _session_db.close()
+                from hermes_state import release_or_close
+                release_or_close(_session_db)
             except (Exception, KeyboardInterrupt) as e:
                 logger.debug("Job '%s': failed to close SQLite session store: %s", job_id, e)
         # Release subprocesses, terminal sandboxes, browser daemons, and the
@@ -7324,6 +7408,7 @@ def _run_one_job_body(
                     job,
                     defer_agent_teardown=_deferred_agents,
                     extra_prompt=extra_prompt,
+                    execution_id=execution_id,
                 )
             else:
                 success, output, final_response, error = run_job(
@@ -7331,6 +7416,7 @@ def _run_one_job_body(
                     defer_agent_teardown=_deferred_agents,
                     extra_prompt=extra_prompt,
                     cancel_event=fire_claim_lost,
+                    execution_id=execution_id,
                 )
         except BaseException:
             # run_job's finally still hands back the agent when it raises; tear
@@ -7645,7 +7731,12 @@ def _run_one_job_body(
         # anything that isn't a plain Exception. Owner fencing still applies:
         # a stale worker must not record over a replacement claim owner.
         _err_text = str(e) or type(e).__name__
-        logger.error("Error processing job %s: %s", job['id'], _err_text)
+        logger.error(
+            "Error processing job %s: %s",
+            job["id"],
+            _err_text,
+            exc_info=(type(e), e, e.__traceback__),
+        )
         delivery_outcome = "suppressed"
         # Owner fencing: a stale worker whose fire claim was taken over (or a
         # transport-cancelled worker) must not send a failure alert on top of
@@ -7808,6 +7899,102 @@ def create_job_with_scheduler_registration(**kwargs) -> dict:
 _DEAD_OWNER_REAP_INTERVAL_SECONDS = 300.0
 _last_dead_owner_reap_at: Optional[float] = None
 
+# Worktree maintenance throttle: the startup pruner historically ran only on
+# `hermes -w` launches, so on gateway-driven boxes (where sessions arrive via
+# Telegram/Discord and nobody launches the CLI for days) merged scratch trees
+# accumulated into tens of GB. The cron tick is the one reliably periodic
+# process on every install, so it owns a low-frequency sweep too. Tests may
+# reset _last_worktree_maintenance_at to None to force a sweep next tick.
+_WORKTREE_MAINTENANCE_INTERVAL_SECONDS = 6 * 3600.0
+_last_worktree_maintenance_at: Optional[float] = None
+_worktree_maintenance_lock = threading.Lock()
+
+
+def _worktree_maintenance_repos() -> List[str]:
+    """Repos whose ``.worktrees/`` this scheduler should keep pruned.
+
+    Candidates: the hermes install checkout itself (where ``hermes -w``
+    sessions on dev boxes create trees) and every configured job workdir's
+    repo root. Only repos that actually have a ``.worktrees/`` dir survive —
+    everything else costs nothing.
+    """
+    repos: set = set()
+
+    # The hermes source checkout (editable/git installs). Wheel installs have
+    # no .git here and are skipped.
+    try:
+        install_root = Path(__file__).resolve().parent.parent
+        if (install_root / ".git").exists():
+            repos.add(str(install_root))
+    except Exception:
+        pass
+
+    # Job workdirs may point inside other repos the agent works on.
+    try:
+        from cron.jobs import load_jobs
+
+        for job in load_jobs():
+            workdir = str(job.get("workdir") or "").strip()
+            if not workdir or not Path(workdir).is_dir():
+                continue
+            try:
+                probe = subprocess.run(
+                    ["git", "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=5, cwd=workdir,
+                )
+                if probe.returncode == 0 and probe.stdout.strip():
+                    repos.add(probe.stdout.strip())
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return [r for r in sorted(repos) if (Path(r) / ".worktrees").is_dir()]
+
+
+def _maybe_run_worktree_maintenance() -> None:
+    """Throttled, threaded worktree prune from the cron tick.
+
+    Runs ``cli._prune_stale_worktrees`` (the same conservative pruner the
+    ``hermes -w`` startup path uses — dirty/unpushed/live-locked trees are
+    never touched) against every candidate repo, on a daemon thread so the
+    tick itself never waits on git. Errors never propagate: worktree GC is
+    hygiene, not scheduling.
+    """
+    global _last_worktree_maintenance_at
+    now = time.monotonic()
+    with _worktree_maintenance_lock:
+        if (
+            _last_worktree_maintenance_at is not None
+            and now - _last_worktree_maintenance_at
+            < _WORKTREE_MAINTENANCE_INTERVAL_SECONDS
+        ):
+            return
+        _last_worktree_maintenance_at = now
+
+    def _run() -> None:
+        try:
+            repos = _worktree_maintenance_repos()
+            if not repos:
+                return
+            from cli import _prune_stale_worktrees
+
+            for repo in repos:
+                try:
+                    _prune_stale_worktrees(repo)
+                except Exception:
+                    logger.debug(
+                        "Cron worktree maintenance failed for %s", repo,
+                        exc_info=True,
+                    )
+        except Exception:
+            logger.debug("Cron worktree maintenance skipped", exc_info=True)
+
+    threading.Thread(
+        target=_run, name="cron-worktree-prune", daemon=True
+    ).start()
+
 
 def tick(
     verbose: bool = True,
@@ -7833,6 +8020,22 @@ def tick(
     Returns:
         Number of jobs executed (0 if another tick is already running)
     """
+    # Stale-code yield gate — BEFORE the lock race (#stale-tick-preemption).
+    # A long-lived process whose checkout was updated underneath it (hot
+    # ``git pull``, interrupted ``hermes update``) serves MIXED sys.modules:
+    # every agent job it dispatches can die on ImportErrors whose real cause
+    # is staleness. When this process is provably stale AND a fresher
+    # process holds the gateway runtime lock, that process's own ticker
+    # dispatches due jobs — this one must not even enter the lock race and
+    # preempt dispatch on a busy minute. When no fresh holder exists
+    # (desktop-standalone users), yielding would silently kill the user's
+    # only ticker, so the tick proceeds and job failures surface through the
+    # delivery path's stale-code hint instead.
+    _skew = _should_yield_tick_to_fresh_gateway()
+    if _skew is not None:
+        _log_tick_yield_once(f"boot={_skew[0]} disk={_skew[1]}")
+        raise CronTickYielded(_skew[0], _skew[1])
+
     lock_dir, lock_file = _get_lock_paths()
     _ensure_cron_dir(lock_dir)
 
@@ -7925,6 +8128,14 @@ def tick(
                     )
             except Exception as _reap_exc:
                 logger.debug("Dead-owner execution reclaim failed: %s", _reap_exc)
+
+        # Periodic worktree GC (throttled to every 6h, threaded): gateway-only
+        # boxes never hit the `hermes -w` startup pruner, so this is the only
+        # sweep they get. Same conservative pruner, same guards.
+        try:
+            _maybe_run_worktree_maintenance()
+        except Exception as _wt_exc:
+            logger.debug("Worktree maintenance dispatch failed: %s", _wt_exc)
 
         due_jobs = get_due_jobs()
 
@@ -8037,14 +8248,8 @@ def tick(
                 verbose=verbose,
             )
 
-        # Partition due jobs: those with a per-job workdir mutate
-        # os.environ["TERMINAL_CWD"] inside run_job, which is process-global, so
-        # they queue on the single-thread sequential pool to run one at a time.
-        # That alone only keeps workdir jobs from overlapping EACH OTHER;
-        # run_job's _terminal_cwd_lock is what additionally stops a concurrently
-        # firing workdir-less parallel-pool job from observing the override.
-        sequential_jobs = [j for j in due_jobs if (j.get("workdir") or "").strip()]
-        parallel_jobs = [j for j in due_jobs if not (j.get("workdir") or "").strip()]
+        # Workdir is task-scoped, so every job uses the normal parallel lane.
+        parallel_jobs = due_jobs
 
         _results: list = []
         _all_futures: list = []
@@ -8160,21 +8365,6 @@ def tick(
                     _running_futures[job_id] = fut
             return fut
 
-        # Sequential pass for env-mutating (workdir) jobs.
-        # Queued to a persistent single-thread pool so they run one at a time
-        # WITHOUT blocking the ticker thread — a long workdir job no
-        # longer starves the rest of the schedule (same fix as the parallel
-        # pass, just serialized).  The in-flight guard prevents a still-running
-        # job from being re-queued on the next tick.
-        if sequential_jobs:
-            seq_pool = _get_sequential_pool()
-            for job in sequential_jobs:
-                fut = _submit_with_guard(job, seq_pool)
-                if fut is None:
-                    continue
-                _all_futures.append(fut)
-                if not sync:
-                    _results.append(True)  # optimistically counted
 
         # Parallel pass — persistent pool, non-blocking dispatch.
         # Jobs that are already running (from a previous tick) are skipped.
