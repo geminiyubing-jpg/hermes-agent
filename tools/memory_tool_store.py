@@ -303,9 +303,19 @@ class MemoryStore:
         if not operations:
             return _error("operations list is empty.")
         ops = [op or {} for op in operations]
+        # Providers sometimes emit ops in the patch-tool shape ({old_text, new_text}, no
+        # action). Infer from the shape: old+new -> replace, old only -> ambiguous (keep
+        # a specific error), neither -> add. Explicit actions pass through untouched.
+        for i, op in enumerate(ops):
+            if not op.get("action"):
+                if op.get("old_text") and (op.get("new_text") or op.get("content")):
+                    op = dict(op, action="replace")
+                elif not op.get("old_text"):
+                    op = dict(op, action="add")
+                ops[i] = op
         # Scan every add/replace content BEFORE touching disk -- one poisoned op rejects the batch.
         for i, op in enumerate(ops):
-            scan_error = op.get("action") in {"add", "replace"} and op.get("content") and _scan_memory_content(op["content"])
+            scan_error = op.get("action") in {"add", "replace"} and (op.get("content") or op.get("new_text")) and _scan_memory_content(op.get("content") or op.get("new_text"))
             if scan_error:
                 return _error(f"Operation {i + 1}: {scan_error}")
 

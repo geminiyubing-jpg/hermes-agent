@@ -3635,11 +3635,22 @@ class GatewayTurnMixin:
                 )
         elif _sc is not None:
             # DUPLICATE-RISK DIAGNOSTIC: a stream consumer existed but suppression did NOT fire; log the
-            # decision inputs ("signal never set" vs "ack-pending race").
-            logger.warning(
+            # decision inputs ("signal never set" vs "ack-pending race"). A consumer that never showed
+            # any streamed text has nothing to duplicate: with streaming off the consumer only handles
+            # interim commentary (never the final), so the normal send IS the delivery. Interim
+            # commentary and sealed past segments are NOT the final response — only live-streamed
+            # state (buffer, last acked edit, an open message) can hold a duplicate of the final.
+            _ever_visible = bool(
+                getattr(_sc, "_last_sent_text", "")
+                or getattr(_sc, "_accumulated", "")
+                or getattr(_sc, "_message_id", None)
+            )
+            (_logger, _lvl) = (logger.debug, "no visible stream text (streaming off or commentary-only consumer) — normal final send is the sole delivery") \
+                if not _ever_visible else (logger.warning, "possible duplicate send (see wecom ack-timeout RCA)")
+            _logger(
                 "Normal final-send NOT suppressed despite active stream consumer for session %s: "
                 "streamed=%s previewed=%s content_delivered=%s transformed=%s final_len=%d — "
-                "possible duplicate send (see wecom ack-timeout RCA).",
+                + _lvl + ".",
                 _sk, _streamed, _previewed, _content_delivered, _transformed, len(_final),
             )
 

@@ -371,6 +371,35 @@ class TestMemoryBatch:
         assert "old entry" not in store.memory_entries
 
 
+    def test_batch_op_missing_action_inferred_from_shape(self, store):
+        # Providers sometimes emit ops with only old_text/new_text (the patch-tool
+        # shape) and no action field -- infer 'replace' instead of failing the batch
+        # with 'unknown action' (seen live 2026-09-05 glm-5.3 batch).
+        store.add("memory", "progress 6/10")
+        result = json.loads(memory_tool(
+            target="memory",
+            operations=[
+                {"old_text": "progress 6/10", "new_text": "progress 7/10"},
+            ],
+            store=store,
+        ))
+        assert result["success"] is True
+        assert "progress 7/10" in store.memory_entries
+        assert "progress 6/10" not in store.memory_entries
+
+
+    def test_batch_op_missing_action_with_only_old_text_still_errors(self, store):
+        # Shape alone can't disambiguate replace vs remove -- keep a specific error.
+        store.add("memory", "keep me")
+        result = json.loads(memory_tool(
+            target="memory",
+            operations=[{"old_text": "keep me"}],
+            store=store,
+        ))
+        assert result["success"] is False
+        assert "action" in result["error"]
+
+
     def test_batch_duplicate_add_is_noop_not_failure(self, store):
         store.add("memory", "already here")
         result = json.loads(memory_tool(
