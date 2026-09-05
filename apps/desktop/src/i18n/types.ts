@@ -478,6 +478,8 @@ export interface Translations {
       }
       backdropTitle: string
       backdropDesc: string
+      userBubbleTitle: string
+      userBubbleDesc: string
       introSplashTitle: string
       introSplashDesc: string
       reactionsTitle: string
@@ -497,6 +499,8 @@ export interface Translations {
       embedsAlways: string
       embedsOff: string
       embedsReset: (count: number) => string
+      resumeLastSessionTitle: string
+      resumeLastSessionDesc: string
       product: string
       productDesc: string
       technical: string

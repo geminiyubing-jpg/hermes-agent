@@ -586,6 +586,8 @@ export const en: Translations = {
       },
       backdropTitle: 'Chat Backdrop',
       backdropDesc: 'The faint statue image behind the conversation.',
+      userBubbleTitle: 'Message Bubble',
+      userBubbleDesc: 'How see-through your own messages are. Solid at 0; only the outline remains at 100.',
       introSplashTitle: 'Intro Splash',
       introSplashDesc: 'The wordmark and prompt shown on an empty chat.',
       reactionsTitle: 'Message Reactions',
@@ -608,6 +610,9 @@ export const en: Translations = {
       embedsAlways: 'Always',
       embedsOff: 'Off',
       embedsReset: (count: number) => `Reset ${count} allowed ${count === 1 ? 'service' : 'services'}`,
+      resumeLastSessionTitle: 'Reopen Last Chat on Launch',
+      resumeLastSessionDesc:
+        'When enabled, the app reopens your most recent chat on cold start. Turn off to always start with a fresh new chat.',
       product: 'Product',
       productDesc: 'Human-friendly tool activity with concise summaries.',
       technical: 'Technical',

@@ -409,6 +409,8 @@ export const ja = defineLocale({
       },
       backdropTitle: 'チャット背景',
       backdropDesc: '会話の背後に表示される淡い彫像の画像。',
+      userBubbleTitle: 'メッセージの吹き出し',
+      userBubbleDesc: '自分のメッセージの透け具合。0 で不透明、100 で枠線だけが残ります。',
       introSplashTitle: 'イントロ表示',
       introSplashDesc: '空のチャットに表示されるワードマークとプロンプト。',
       reactionsTitle: 'メッセージリアクション',
@@ -432,6 +434,9 @@ export const ja = defineLocale({
       embedsAlways: '常に',
       embedsOff: 'オフ',
       embedsReset: (count: number) => `許可した${count}件のサービスをリセット`,
+      resumeLastSessionTitle: '起動時に前回のチャットを再開',
+      resumeLastSessionDesc:
+        'オンの場合、コールドスタート時に直近のチャットを再び開きます。オフにすると常に新しいチャットから始まります。',
       product: 'プロダクト',
       productDesc: '読みやすいツール活動と簡潔な要約を表示します。',
       technical: 'テクニカル',
