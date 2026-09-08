@@ -3498,6 +3498,75 @@ class FeishuAdapter(BasePlatformAdapter):
         except Exception:
             return 0
 
+    _FEISHU_VIDEO_UPLOAD_LIMIT_BYTES = 25 * 1024 * 1024  # API rejects ~26MB+ with code 9499
+
+    @classmethod
+    def _shrink_video_for_upload(cls, file_path: str) -> Optional[str]:
+        """Compress an oversized video to fit the Feishu upload limit.
+
+        Returns the compressed file path, or None when the file already fits or
+        ffmpeg is unavailable (caller then sends the original and surfaces the
+        API error verbatim).
+        """
+        try:
+            if os.path.getsize(file_path) <= cls._FEISHU_VIDEO_UPLOAD_LIMIT_BYTES:
+                return None
+        except OSError:
+            return None
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("ffmpeg"):
+            logger.warning("[Feishu] ffmpeg not found; cannot compress oversized video %s", file_path)
+            return None
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        try:
+            duration_s = max(float(probe.stdout.strip()), 1.0)
+        except ValueError:
+            duration_s = 0.0
+        # Target ~24MB; without a duration we fall back to aggressive CRF + scale.
+        out_path = tempfile.NamedTemporaryFile(
+            prefix="feishu_shrunk_", suffix=".mp4", delete=False,
+        ).name
+        if duration_s > 0:
+            video_bitrate_k = max(int((24 * 1024 * 1024 * 8) / duration_s / 1000) - 128, 200)
+            cmd = ["ffmpeg", "-y", "-i", file_path,
+                   "-b:v", f"{video_bitrate_k}k", "-maxrate", f"{int(video_bitrate_k * 1.4)}k",
+                   "-bufsize", f"{video_bitrate_k * 2}k", "-b:a", "128k",
+                   out_path]
+        else:
+            cmd = ["ffmpeg", "-y", "-i", file_path,
+                   "-vf", "scale=-2:720", "-crf", "30", "-b:a", "128k", out_path]
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=1800, check=True)
+        except (subprocess.SubprocessError, TimeoutError) as exc:
+            logger.warning("[Feishu] ffmpeg compression failed for %s: %s", file_path, exc)
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+            return None
+        shrunk_size = os.path.getsize(out_path)
+        if shrunk_size <= 0:
+            logger.warning("[Feishu] ffmpeg produced empty output for %s", file_path)
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+            return None
+        if shrunk_size <= cls._FEISHU_VIDEO_UPLOAD_LIMIT_BYTES:
+            return out_path
+        logger.warning(
+            "[Feishu] Compressed %s still %d bytes (limit %d)",
+            out_path, shrunk_size, cls._FEISHU_VIDEO_UPLOAD_LIMIT_BYTES,
+        )
+        return out_path if shrunk_size < os.path.getsize(file_path) else None
+
     async def _send_uploaded_file_message(
         self, *, chat_id: str, file_path: str, reply_to: Optional[str], metadata: Optional[Dict[str, Any]],
         caption: Optional[str] = None, file_name: Optional[str] = None, outbound_message_type: str = "file",
@@ -3512,6 +3581,16 @@ class FeishuAdapter(BasePlatformAdapter):
             file_path=display_name, requested_message_type=outbound_message_type,
         )
         try:
+            if upload_file_type == "mp4":
+                shrunk = await asyncio.to_thread(
+                    self._shrink_video_for_upload, file_path,
+                )
+                if shrunk:
+                    logger.info(
+                        "[Feishu] Video %s exceeds upload limit; sending compressed copy %s",
+                        display_name, shrunk,
+                    )
+                    file_path = shrunk
             duration_ms = self._get_audio_duration_ms(file_path) if upload_file_type == "opus" else 0
             with open(file_path, "rb") as file_obj:
                 body = self._build_file_upload_body(
@@ -3523,7 +3602,6 @@ class FeishuAdapter(BasePlatformAdapter):
             if not file_key:
                 return self._response_error_result(
                     upload_response, default_message="file upload failed",
-                    override_error="Feishu file upload missing file_key",
                 )
 
             key_payload = {"file_key": file_key}
