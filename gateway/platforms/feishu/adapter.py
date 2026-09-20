@@ -425,7 +425,7 @@ class FeishuAdapter(
             .build()
         )
 
-    async def connect(self) -> bool:
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
         """Connect to Feishu/Lark."""
         if not FEISHU_AVAILABLE:
             logger.error("[Feishu] lark-oapi not installed")
