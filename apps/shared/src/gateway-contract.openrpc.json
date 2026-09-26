@@ -17596,6 +17596,18 @@
             "default": null,
             "title": "Response Previewed"
           },
+          "response_transformed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Transformed"
+          },
           "billing": {
             "anyOf": [
               {
@@ -21835,6 +21847,18 @@
             ],
             "default": null,
             "title": "Max"
+          },
+          "allow_shortcut": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allow Shortcut"
           }
         },
         "required": [
@@ -24083,6 +24107,11 @@
           "isKanban": {
             "default": false,
             "title": "Iskanban",
+            "type": "boolean"
+          },
+          "isGit": {
+            "default": true,
+            "title": "Isgit",
             "type": "boolean"
           },
           "sessions": {
@@ -28629,6 +28658,18 @@
             ],
             "default": null,
             "title": "Cwd"
+          },
+          "cwd_explicit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd Explicit"
           },
           "messages": {
             "anyOf": [
@@ -38132,6 +38173,18 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/PreviewRestartProgressPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects.changed",
+      "summary": "projects.db moved; refetch the Projects sidebar.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ChangeSignalPayload"
           }
         }
       ]
