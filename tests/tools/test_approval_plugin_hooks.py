@@ -154,10 +154,6 @@ class TestSmartModeFiresHooks:
         monkeypatch.setattr(approval_module, "_YOLO_MODE_FROZEN", False)
         monkeypatch.setattr(approval_context, "_get_approval_mode", lambda: "smart")
         monkeypatch.setattr(approval_smart, "_smart_approve", lambda *_: verdict)
-        monkeypatch.setattr(
-            "tools.tirith_security.check_command_security",
-            lambda _: {"action": "allow", "findings": [], "summary": ""},
-        )
 
     @pytest.mark.parametrize(
         ("guard", "value", "verdict", "approved", "choice", "pattern_key"),
@@ -317,10 +313,6 @@ class TestSmartModeFiresHooks:
         monkeypatch.setattr(approval_module, "_YOLO_MODE_FROZEN", False)
         monkeypatch.setattr(approval_context, "_get_approval_mode", lambda: "smart")
         monkeypatch.setattr(approval_smart, "_smart_approve", lambda *_: next(verdicts))
-        monkeypatch.setattr(
-            "tools.tirith_security.check_command_security",
-            lambda _: {"action": "allow", "findings": [], "summary": ""},
-        )
         captured = []
         with patch(
             "hermes_cli.plugins.invoke_hook",
@@ -344,6 +336,9 @@ def _capture_hooks(run):
     with patch("hermes_cli.plugins.invoke_hook",
                side_effect=lambda name, **kw: captured.append((name, kw)) or []):
         result = run()
+    # on_human_input_* fire around the same prompts with their own payload contract
+    # (tests/tools/test_human_input_hooks.py); this helper compares the approval pair.
+    captured = [(name, kw) for name, kw in captured if not name.startswith("on_human_input_")]
     for _, kw in captured:
         for key in ("turn_id", "tool_call_id", "session_id"):
             kw.pop(key, None)
