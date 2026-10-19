@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Agent - 项目全景文档</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--bg2:#161822;--bg3:#1e2030;--fg:#e0e0e8;--fg2:#9ca0b0;--fg3:#6b7084;--accent:#7c5cfc;--accent2:#5c9cfc;--accent3:#3ccca0;--red:#fc5c7c;--orange:#fca05c;--yellow:#fcdc5c;--border:#2a2d3e;--card:#1a1c2e;--radius:12px;--font:'Segoe UI',system-ui,-apple-system,sans-serif;--mono:'SF Mono','Cascadia Code','Fira Code',monospace}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--fg);line-height:1.7;font-size:15px}
+a{color:var(--accent2);text-decoration:none}a:hover{color:var(--accent3)}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(15,17,23,.85);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;height:56px}
+.nav-logo{font-weight:800;font-size:1.15rem;color:var(--accent);margin-right:2rem}
+.nav-links{display:flex;gap:.25rem;flex-wrap:wrap}
+.nav-links a{padding:.35rem .75rem;border-radius:8px;font-size:.85rem;color:var(--fg2);transition:all .2s}
+.nav-links a:hover,.nav-links a.active{background:var(--bg3);color:var(--fg)}
+.main{max-width:1340px;margin:0 auto;padding:72px 2rem 4rem}
+.section{margin-bottom:4rem;scroll-margin-top:72px;animation:fadeIn .4s ease-out}
+.section-title{font-size:1.8rem;font-weight:800;margin-bottom:.5rem;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.section-desc{color:var(--fg2);margin-bottom:2rem;font-size:.95rem}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;margin-bottom:1.25rem;transition:border-color .2s}
+.card:hover{border-color:var(--accent)}
+.card-title{font-size:1.1rem;font-weight:700;margin-bottom:.5rem;display:flex;align-items:center;gap:.5rem}
+.card p{color:var(--fg2);font-size:.9rem}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:1.25rem}
+.grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem}
+.grid-4{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem}
+.arch-container{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:2rem;overflow-x:auto}
+.arch-layer{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1.5rem}
+.arch-layer-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--fg3);margin-bottom:.25rem;padding-left:.25rem}
+.arch-row{display:flex;gap:.75rem;flex-wrap:wrap;justify-content:center}
+.arch-box{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;font-weight:600;text-align:center;min-width:120px;transition:all .2s;cursor:default}
+.arch-box:hover{border-color:var(--accent);transform:translateY(-2px)}
+.arch-box.primary{background:linear-gradient(135deg,rgba(124,92,252,.15),rgba(92,156,252,.1));border-color:var(--accent)}
+.arch-box.success{border-color:var(--accent3);color:var(--accent3)}
+.arch-box.warning{border-color:var(--orange);color:var(--orange)}
+.arch-box.danger{border-color:var(--red);color:var(--red)}
+.arch-box .sub{font-size:.68rem;color:var(--fg3);font-weight:400;margin-top:2px}
+.arch-arrow{text-align:center;color:var(--fg3);font-size:1.2rem;padding:.25rem 0}
+.flow-container{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:2rem}
+.flow-step{display:flex;align-items:stretch;gap:1rem;margin-bottom:.5rem}
+.flow-num{width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem;flex-shrink:0;margin-top:.5rem}
+.flow-content{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem}
+.flow-content h4{font-size:.95rem;font-weight:700;margin-bottom:.25rem}
+.flow-content p{color:var(--fg2);font-size:.82rem}
+.flow-connector{width:36px;display:flex;justify-content:center;padding:.25rem 0;color:var(--accent);font-size:.9rem}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:var(--bg3);padding:.75rem 1rem;text-align:left;font-weight:700;color:var(--fg2);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:.6rem 1rem;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}tr:hover td{background:rgba(124,92,252,.05)}
+code{font-family:var(--mono);background:var(--bg3);padding:.15rem .4rem;border-radius:4px;font-size:.82em;color:var(--accent2)}
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600}
+.badge.green{background:rgba(60,204,160,.15);color:var(--accent3)}
+.badge.blue{background:rgba(92,156,252,.15);color:var(--accent2)}
+.badge.orange{background:rgba(252,160,92,.15);color:var(--orange)}
+.badge.red{background:rgba(252,92,124,.15);color:var(--red)}
+.tabs{display:flex;gap:.25rem;border-bottom:1px solid var(--border);margin-bottom:1.5rem}
+.tab-btn{padding:.5rem 1rem;border:none;background:none;color:var(--fg3);font-size:.85rem;font-weight:600;cursor:pointer;border-radius:8px 8px 0 0;transition:all .2s;font-family:var(--font)}
+.tab-btn:hover{color:var(--fg);background:var(--bg3)}
+.tab-btn.active{color:var(--accent);background:var(--bg3);border-bottom:2px solid var(--accent)}
+.tab-panel{display:none}.tab-panel.active{display:block}
+details{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:.75rem;overflow:hidden}
+summary{padding:.75rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;color:var(--fg);list-style:none;display:flex;align-items:center;gap:.5rem}
+summary::before{content:"\25B6";font-size:.7rem;color:var(--accent);transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+.detail-body{padding:.75rem 1rem;border-top:1px solid var(--border)}
+.detail-body p{color:var(--fg2);font-size:.85rem}
+.hero{text-align:center;padding:4rem 0 2rem;margin-bottom:3rem}
+.hero h1{font-size:2.8rem;font-weight:900;margin-bottom:.5rem;background:linear-gradient(135deg,#7c5cfc,#5c9cfc,#3ccca0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero .tagline{font-size:1.15rem;color:var(--fg2);margin-bottom:1.5rem}
+.hero-stats{display:flex;justify-content:center;gap:2.5rem;flex-wrap:wrap}
+.hero-stat{text-align:center}.hero-stat .num{font-size:2rem;font-weight:900;color:var(--accent)}.hero-stat .label{font-size:.78rem;color:var(--fg3)}
+.pre-wrap{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:1rem;overflow-x:auto;margin:.75rem 0}
+.pre-wrap code{background:none;padding:0;font-size:.82rem;line-height:1.6;color:var(--fg)}
+.comment{color:var(--fg3)}.keyword{color:var(--accent)}.string{color:var(--accent3)}
+.legend{display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem;padding:.75rem 1rem;background:var(--bg3);border-radius:8px}
+.legend-item{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--fg2)}
+.legend-dot{width:10px;height:10px;border-radius:50%}
+.footer{text-align:center;padding:2rem;color:var(--fg3);border-top:1px solid var(--border);font-size:.82rem;margin-top:3rem}
+.seq-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;font-size:.82rem}
+.seq-num{padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:700;color:#000;flex-shrink:0}
+.seq-note{font-size:.72rem;color:var(--fg3);margin-left:auto}
+.plugin-hub{display:flex;flex-direction:column;align-items:center;gap:1rem}
+.plugin-center{background:linear-gradient(135deg,rgba(124,92,252,.2),rgba(92,156,252,.15));border:2px solid var(--accent);border-radius:var(--radius);padding:1.25rem 2.5rem;font-weight:800;font-size:1.1rem;text-align:center}
+.plugin-ring{display:flex;flex-wrap:wrap;gap:.75rem;justify-content:center;max-width:800px}
+.plugin-node{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.5rem .85rem;font-size:.8rem;font-weight:600;text-align:center;min-width:110px}
+.plugin-node .sub{font-size:.65rem;color:var(--fg3)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:768px){.nav{padding:0 1rem}.nav-links a{padding:.3rem .5rem;font-size:.75rem}.main{padding:64px 1rem 2rem}.hero h1{font-size:2rem}.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.arch-row{flex-direction:column;align-items:center}}
+@media print{.nav{display:none}.main{padding-top:0}body{background:#fff;color:#000}.card,.arch-container,.flow-container{background:#f8f8f8;border-color:#ddd}}
+</style>
+</head>
+<body>
+<nav class="nav">
+<div class="nav-logo">Hermes Agent</div>
+<div class="nav-links">
+<a href="#overview">概览</a><a href="#architecture">架构图</a><a href="#modules">核心模块</a><a href="#plugins">插件系统</a><a href="#tools">工具系统</a><a href="#dataflow">数据流</a><a href="#sequence">交互序列</a><a href="#integrations">外部集成</a><a href="#skills">技能生态</a><a href="#usage">使用说明</a><a href="#config">配置参考</a>
+</div>
+</nav>
+<div class="main">
+
+<section class="hero" id="overview">
+<h1>Hermes Agent</h1>
+<p class="tagline">由 Nous Research 构建的高级自学习 AI Agent 框架</p>
+<div class="hero-stats">
+<div class="hero-stat"><div class="num">40+</div><div class="label">内置工具</div></div>
+<div class="hero-stat"><div class="num">8</div><div class="label">记忆插件</div></div>
+<div class="hero-stat"><div class="num">7+</div><div class="label">消息平台</div></div>
+<div class="hero-stat"><div class="num">100+</div><div class="label">可用技能</div></div>
+<div class="hero-stat"><div class="num">52</div><div class="label">斜杠命令</div></div>
+<div class="hero-stat"><div class="num">6+</div><div class="label">LLM提供商</div></div>
+</div>
+</section>
+
+<!-- 1. Architecture -->
+<section class="section" id="architecture">
+<h2 class="section-title">1. 系统架构全景图</h2>
+<p class="section-desc">Hermes Agent 采用五层分层模块化架构，各层职责清晰、松耦合。</p>
+<div class="arch-container">
+<div class="legend">
+<div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div> 核心层</div>
+<div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div> 服务层</div>
+<div class="legend-item"><div class="legend-dot" style="background:var(--accent3)"></div> 外部接口</div>
+<div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> 插件/扩展</div>
+<div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> 存储</div>
+</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Layer 1 &middot; 用户接口层</div>
+<div class="arch-row">
+<div class="arch-box success">CLI 交互终端<div class="sub">prompt_toolkit &middot; Rich</div></div>
+<div class="arch-box success">Web Dashboard<div class="sub">React + TypeScript + Vite</div></div>
+<div class="arch-box success">Gateway 网关<div class="sub">多平台消息路由</div></div>
+<div class="arch-box success">API Server<div class="sub">FastAPI REST</div></div>
+</div></div>
+<div class="arch-arrow">&#9660; &#9660; &#9660; &#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Layer 2 &middot; 核心引擎层</div>
+<div class="arch-row">
+<div class="arch-box primary" style="min-width:200px">AIAgent 主引擎<div class="sub">run_agent.py &middot; 对话循环 &middot; 工具调度</div></div>
+<div class="arch-box primary">Prompt Builder<div class="sub">系统提示词组装</div></div>
+<div class="arch-box primary">Context Compressor<div class="sub">上下文自动压缩</div></div>
+<div class="arch-box primary">Model Router<div class="sub">多模型路由</div></div>
+</div></div>
+<div class="arch-arrow">&#9660; &#9660; &#9660; &#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Layer 3 &middot; 服务层</div>
+<div class="arch-row">
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Tool Registry<div class="sub">工具注册与分发</div></div>
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Memory Manager<div class="sub">持久化记忆管理</div></div>
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Session Manager<div class="sub">会话生命周期</div></div>
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Agent Orchestration<div class="sub">多Agent协调</div></div>
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Cron Scheduler<div class="sub">定时任务</div></div>
+<div class="arch-box" style="border-color:var(--accent2);color:var(--accent2)">Skills Engine<div class="sub">技能加载执行</div></div>
+</div></div>
+<div class="arch-arrow">&#9660; &#9660; &#9660; &#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Layer 4 &middot; 扩展层</div>
+<div class="arch-row">
+<div class="arch-box warning">Memory Plugins<div class="sub">8种记忆后端</div></div>
+<div class="arch-box warning">Context Engine<div class="sub">自定义上下文处理</div></div>
+<div class="arch-box warning">Dashboard Plugins<div class="sub">React插件SDK</div></div>
+<div class="arch-box warning">MCP Integration<div class="sub">Model Context Protocol</div></div>
+<div class="arch-box warning">Hook System<div class="sub">生命周期钩子</div></div>
+</div></div>
+<div class="arch-arrow">&#9660; &#9660; &#9660; &#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Layer 5 &middot; 存储与外部服务</div>
+<div class="arch-row">
+<div class="arch-box" style="border-color:var(--yellow);color:var(--yellow)">SQLite + FTS5<div class="sub">本地数据库 &middot; 全文搜索</div></div>
+<div class="arch-box" style="border-color:var(--yellow);color:var(--yellow)">File System<div class="sub">配置 &middot; 技能 &middot; 检查点</div></div>
+<div class="arch-box danger">LLM Providers<div class="sub">OpenAI &middot; Anthropic &middot; Google &middot; Ollama</div></div>
+<div class="arch-box danger">Messaging Platforms<div class="sub">Telegram &middot; Discord &middot; Slack &middot; WeChat</div></div>
+</div></div>
+</div>
+</section>
+
+<!-- 2. Core Modules -->
+<section class="section" id="modules">
+<h2 class="section-title">2. 核心模块详解</h2>
+<p class="section-desc">系统由6大核心模块组成，各司其职又紧密协作。点击标签页查看详情。</p>
+<div class="tabs">
+<button class="tab-btn active" onclick="switchTab(event,'mod-agent')">AIAgent</button>
+<button class="tab-btn" onclick="switchTab(event,'mod-ctx')">上下文管理</button>
+<button class="tab-btn" onclick="switchTab(event,'mod-tool')">工具系统</button>
+<button class="tab-btn" onclick="switchTab(event,'mod-mem')">记忆系统</button>
+<button class="tab-btn" onclick="switchTab(event,'mod-gateway')">Gateway</button>
+<button class="tab-btn" onclick="switchTab(event,'mod-orch')">多Agent</button>
+</div>
+
+<div class="tab-panel active" id="mod-agent">
+<div class="card">
+<div class="card-title">&#x1F9E0; AIAgent 主引擎 <code>run_agent.py</code></div>
+<p>系统的核心调度器，管理完整的对话生命周期。</p>
+<div class="pre-wrap"><code><span class="comment"># 核心职责</span>
+<span class="keyword">class</span> AIAgent:
+    - 管理对话循环 (conversation loop)
+    - 路由到正确的 LLM 提供商
+    - 处理工具调用请求和结果回传
+    - 管理迭代预算 (max turns: 90)
+    - 自动上下文压缩触发
+    - 错误恢复和重试机制
+    - 流式/非流式响应处理
+    - 支持 Auxiliary Client (辅助模型)</code></div>
+</div>
+<div class="grid-2">
+<div class="card"><div class="card-title">Prompt Builder</div><p>动态组装系统提示词：角色设定、可用工具描述、用户画像、上下文注入、技能提示。</p></div>
+<div class="card"><div class="card-title">Model Metadata</div><p>模型特定的配置参数：Token估算、上下文窗口限制、工具调用格式适配。</p></div>
+</div></div>
+
+<div class="tab-panel" id="mod-ctx">
+<div class="card">
+<div class="card-title">&#x1F5DC; Context Compressor <code>agent/context_compressor.py</code></div>
+<p>当对话超过模型上下文窗口时自动触发压缩，使用辅助模型进行摘要。</p>
+<div class="pre-wrap"><code><span class="comment"># 压缩策略</span>
+1. 保留 system prompt + 最近的对话（头部和尾部）
+2. 对中间历史使用 LLM 生成摘要
+3. 智能分配 Token 预算
+4. 保护重要消息不被压缩
+5. 支持迭代压缩（超长对话多次压缩）</code></div>
+</div>
+<div class="card"><div class="card-title">Context Engine 插件</div><p>通过 <code>context.engine</code> 配置可替换内置压缩器。插件从 <code>~/.hermes/plugins/</code> 自动发现。</p></div>
+</div>
+
+<div class="tab-panel" id="mod-tool">
+<div class="card">
+<div class="card-title">&#x1F527; Tool Registry <code>tools/registry.py</code></div>
+<p>所有工具的自注册中心，使用注册表模式统一管理。</p>
+<div class="pre-wrap"><code><span class="comment"># 工具注册机制</span>
+每个工具模块在加载时自动调用 registry.register():
+  - schema:  JSON Schema 格式参数定义
+  - handler: 实际执行函数（支持 async/sync）
+  - metadata: 名称、描述、所属 toolset
+  - availability: 运行时可用性检查
+
+<span class="comment"># 工具集 (Toolsets)</span>
+toolsets = {
+    "web":      [web_search, url_fetch, browser],
+    "terminal": [shell_execute, file_ops],
+    "creative": [image_gen, music_gen],
+}</code></div>
+</div></div>
+
+<div class="tab-panel" id="mod-mem">
+<div class="card">
+<div class="card-title">&#x1F4BE; Memory Manager <code>agent/memory_manager.py</code></div>
+<p>统一的记忆管理接口，支持8种后端插件。</p>
+<div class="pre-wrap"><code><span class="comment"># 记忆系统架构</span>
+MemoryManager (统一接口)
+    |__ prefetch()  -> 会话开始时预取相关记忆
+    |__ store()     -> 存储新记忆
+    |__ search()    -> 语义搜索
+    |__ reflect()   -> 定期反思总结
+
+<span class="comment"># 后端插件</span>
+Holographic | Hindsight | RetainDB | Honcho
+OpenViking  | ByteRover | Mem0     | Supermemory</code></div>
+</div></div>
+
+<div class="tab-panel" id="mod-gateway">
+<div class="card">
+<div class="card-title">&#x1F310; Gateway 网关 <code>gateway/</code></div>
+<p>多平台消息路由中心，统一处理来自不同聊天平台的消息。</p>
+<div class="pre-wrap"><code><span class="comment"># Gateway 核心流程</span>
+Gateway.run()
+  |__ 加载平台适配器 (Telegram/Discord/Slack/...)
+  |__ 为每个平台创建消息监听
+  |__ 消息到达 -> 路由到对应 Session
+  |__ Session 管理 (创建/重置/清理)
+  |__ 调用 AIAgent 处理消息
+  |__ 响应路由回原始平台
+  |__ 后台任务 (Cron执行 / 定时清理)
+
+<span class="comment"># Session 策略</span>
+session_reset: daily | idle | both | none</code></div>
+</div></div>
+
+<div class="tab-panel" id="mod-orch">
+<div class="card">
+<div class="card-title">&#x1F3AD; Agent Orchestration <code>agent_orchestration/</code></div>
+<p>多Agent协调系统，支持子Agent的生成、通信和生命周期管理。</p>
+<div class="pre-wrap"><code><span class="comment"># 多Agent架构</span>
+Manager (线程池管理)
+  |__ spawn_agent()  -> 生成子Agent
+  |__ 最大委派深度: 2层
+  |__ pending -> running -> completed/failed
+
+Mailbox Hub (消息传递)
+  |__ 混合存储: 内存队列 + JSON持久化
+  |__ 消息类型: message / task / result / permission
+  |__ 线程安全 + 跨进程安全
+
+<span class="comment"># 工作流模式</span>
+parallel | sequential | map_reduce | DAG</code></div>
+</div></div>
+</section>
+
+<!-- 3. Plugin System -->
+<section class="section" id="plugins">
+<h2 class="section-title">3. 插件系统架构</h2>
+<p class="section-desc">三层插件机制，通过标准化接口实现松耦合扩展。</p>
+<div class="arch-container">
+<div class="plugin-hub">
+<div class="plugin-center">Plugin Manager<br><span style="font-size:.75rem;color:var(--fg2)">发现 &middot; 加载 &middot; 注册 &middot; 生命周期管理</span></div>
+<div class="arch-arrow">&#9660; &#9660; &#9660;</div>
+<div style="display:flex;gap:2rem;flex-wrap:wrap;justify-content:center">
+<div style="text-align:center">
+<div style="font-size:.7rem;color:var(--fg3);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:1px">发现源</div>
+<div class="plugin-ring">
+<div class="plugin-node"><code>~/.hermes/plugins/</code><div class="sub">用户插件</div></div>
+<div class="plugin-node"><code>.hermes/plugins/</code><div class="sub">项目插件</div></div>
+<div class="plugin-node"><code>pip entry_points</code><div class="sub">Pip插件</div></div>
+</div></div>
+<div style="text-align:center">
+<div style="font-size:.7rem;color:var(--fg3);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:1px">插件类型</div>
+<div class="plugin-ring">
+<div class="plugin-node" style="border-color:var(--accent3);color:var(--accent3)">Memory Provider<div class="sub">记忆后端</div></div>
+<div class="plugin-node" style="border-color:var(--accent2);color:var(--accent2)">Context Engine<div class="sub">上下文引擎</div></div>
+<div class="plugin-node" style="border-color:var(--orange);color:var(--orange)">Dashboard<div class="sub">Web插件</div></div>
+</div></div>
+<div style="text-align:center">
+<div style="font-size:.7rem;color:var(--fg3);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:1px">注册接口</div>
+<div class="plugin-ring">
+<div class="plugin-node">register_tool()<div class="sub">自定义工具</div></div>
+<div class="plugin-node">register_hook()<div class="sub">生命周期钩子</div></div>
+<div class="plugin-node">register_command()<div class="sub">斜杠命令</div></div>
+<div class="plugin-node">register_memory_provider()<div class="sub">记忆提供者</div></div>
+</div></div>
+</div></div>
+</div>
+
+<h3 style="margin-top:2rem;margin-bottom:1rem;font-size:1.1rem">生命周期钩子</h3>
+<div class="grid-4">
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>pre_tool_call</code></div><p>工具执行前拦截/修改</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>post_tool_call</code></div><p>工具执行后处理</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>pre_llm_call</code></div><p>LLM调用前注入上下文</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>post_llm_call</code></div><p>LLM响应后处理</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>on_session_start</code></div><p>会话创建时</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>on_session_end</code></div><p>会话结束时</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>on_session_reset</code></div><p>会话重置时</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem"><code>pre_api_request</code></div><p>API请求前处理</p></div>
+</div>
+
+<h3 style="margin-top:2rem;margin-bottom:1rem;font-size:1.1rem">记忆插件一览</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>插件</th><th>类型</th><th>外部依赖</th><th>核心特性</th></tr></thead>
+<tbody>
+<tr><td><strong>Holographic</strong></td><td><span class="badge green">本地</span></td><td>无</td><td>SQLite+FTS5、HRR组合检索、信任评分</td></tr>
+<tr><td><strong>Hindsight</strong></td><td><span class="badge blue">云+本地</span></td><td>HINDSIGHT_API_KEY</td><td>知识图谱、实体解析、多策略检索</td></tr>
+<tr><td><strong>RetainDB</strong></td><td><span class="badge blue">云端</span></td><td>RETAINDB_API_KEY</td><td>7种记忆类型、SQLite写后队列</td></tr>
+<tr><td><strong>Honcho</strong></td><td><span class="badge blue">云端</span></td><td>honcho-ai</td><td>跨会话用户建模、方言问答</td></tr>
+<tr><td><strong>OpenViking</strong></td><td><span class="badge blue">云端</span></td><td>OPENVIKING_ENDPOINT</td><td>分层检索、文件系统式知识浏览</td></tr>
+<tr><td><strong>ByteRover</strong></td><td><span class="badge orange">CLI</span></td><td>brv 二进制</td><td>持久知识树、模糊搜索</td></tr>
+<tr><td><strong>Mem0</strong></td><td><span class="badge blue">云端</span></td><td>MEM0_API_KEY</td><td>自动去重、重排序、记忆分类</td></tr>
+<tr><td><strong>Supermemory</strong></td><td><span class="badge blue">云端</span></td><td>SUPERMEMORY_API_KEY</td><td>语义长期记忆、实体提取</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- 4. Tool System -->
+<section class="section" id="tools">
+<h2 class="section-title">4. 工具系统</h2>
+<p class="section-desc">40+内置工具，按功能分组为Toolset，支持动态加载和扩展。</p>
+<div class="grid-3">
+<div class="card"><div class="card-title">&#x1F5A5; Terminal Tool</div><p>Shell命令执行，支持多种后端（本地/Docker/Singularity/Modal/Daytona）。</p></div>
+<div class="card"><div class="card-title">&#x1F310; Web Tools</div><p>Web搜索、URL内容获取、网页摘要提取。</p></div>
+<div class="card"><div class="card-title">&#x1F50D; Browser Tool</div><p>Playwright浏览器自动化，表单填写、截图、页面交互。</p></div>
+<div class="card"><div class="card-title">&#x1F4C1; File Tools</div><p>文件读写、搜索、目录操作、文件系统检查点。</p></div>
+<div class="card"><div class="card-title">&#x26A1; Skills Tool</div><p>动态技能加载与执行，按需从Skills Hub安装。</p></div>
+<div class="card"><div class="card-title">&#x1F517; MCP Tool</div><p>Model Context Protocol集成，连接外部MCP服务器。</p></div>
+<div class="card"><div class="card-title">&#x1F3A8; Image Tools</div><p>图片生成、分析、处理（多模态支持）。</p></div>
+<div class="card"><div class="card-title">&#x1F4DD; Code Tools</div><p>代码执行、语法高亮、代码审查辅助。</p></div>
+<div class="card"><div class="card-title">&#x23F0; Cron Tool</div><p>定时任务创建、管理、执行。</p></div>
+</div>
+
+<h3 style="margin-top:2rem;margin-bottom:1rem;font-size:1.1rem">工具执行流程</h3>
+<div class="flow-container">
+<div class="flow-step"><div class="flow-num">1</div><div class="flow-content"><h4>LLM返回 tool_call</h4><p>模型决定调用某个工具，返回工具名称和参数（JSON Schema格式）</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">2</div><div class="flow-content"><h4>Registry查找</h4><p>Tool Registry根据名称查找已注册的工具，验证可用性</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">3</div><div class="flow-content"><h4>权限检查</h4><p>根据toolset配置和用户权限，决定是否允许执行</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">4</div><div class="flow-content"><h4>pre_tool_call 钩子</h4><p>插件可在此拦截、修改参数或阻止执行</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">5</div><div class="flow-content"><h4>工具执行</h4><p>调用handler函数（同步或异步），获取执行结果</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">6</div><div class="flow-content"><h4>post_tool_call 钩子</h4><p>插件可在此处理结果、记录日志等</p></div></div>
+<div class="flow-connector">&#9660;</div>
+<div class="flow-step"><div class="flow-num">7</div><div class="flow-content"><h4>结果回传LLM</h4><p>工具结果作为消息添加到对话历史，LLM继续生成响应</p></div></div>
+</div>
+</section>
+
+<!-- 5. Data Flow -->
+<section class="section" id="dataflow">
+<h2 class="section-title">5. 数据流全景图</h2>
+<p class="section-desc">从用户发送消息到收到响应的完整数据流转路径。</p>
+<div class="arch-container">
+<div class="arch-layer">
+<div class="arch-layer-label">Step 1 &middot; 消息输入</div>
+<div class="arch-row">
+<div class="arch-box success">用户消息<div class="sub">CLI / Web / 消息平台</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box">Gateway / CLI Router<div class="sub">消息路由</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box">Session Manager<div class="sub">查找/创建会话</div></div>
+</div></div>
+<div class="arch-arrow">&#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Step 2 &middot; 上下文构建</div>
+<div class="arch-row">
+<div class="arch-box primary">Memory Prefetch<div class="sub">预取相关记忆</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box primary">Prompt Builder<div class="sub">组装系统提示词</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box primary">Context Compressor<div class="sub">检查/压缩上下文</div></div>
+</div></div>
+<div class="arch-arrow">&#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Step 3 &middot; LLM处理</div>
+<div class="arch-row">
+<div class="arch-box danger">Model Router<div class="sub">选择模型提供商</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box danger">API Call<div class="sub">发送请求到LLM</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box danger">Stream Handler<div class="sub">流式/批量响应</div></div>
+</div></div>
+<div class="arch-arrow">&#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Step 4 &middot; 工具执行循环（可能多次）</div>
+<div class="arch-row">
+<div class="arch-box warning">Tool Call检测<div class="sub">解析工具调用请求</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box warning">Tool Execution<div class="sub">执行工具获取结果</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box warning">结果注入<div class="sub">结果回传对话历史</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box warning">再次调用LLM<div class="sub">继续生成</div></div>
+</div></div>
+<div class="arch-arrow">&#9660;</div>
+<div class="arch-layer">
+<div class="arch-layer-label">Step 5 &middot; 响应输出</div>
+<div class="arch-row">
+<div class="arch-box" style="border-color:var(--accent3);color:var(--accent3)">Memory Store<div class="sub">存储对话到记忆</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box" style="border-color:var(--accent3);color:var(--accent3)">Display Formatting<div class="sub">Rich格式化</div></div>
+<div style="color:var(--fg3);display:flex;align-items:center">&#x2192;</div>
+<div class="arch-box" style="border-color:var(--accent3);color:var(--accent3)">Response Delivery<div class="sub">返回到原始平台</div></div>
+</div></div>
+</div>
+</section>
+
+<!-- 6. Sequence Diagram -->
+<section class="section" id="sequence">
+<h2 class="section-title">6. 交互序列图</h2>
+<p class="section-desc">展示各组件之间的典型交互时序。</p>
+<div class="arch-container">
+<div style="display:flex;justify-content:space-around;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:2px solid var(--border)">
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">User</div>
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">Gateway</div>
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">AIAgent</div>
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">Tool Reg</div>
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">LLM</div>
+<div style="text-align:center;font-weight:700;font-size:.85rem;padding:.5rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:8px;min-width:80px">Memory</div>
+</div>
+<div style="padding:1rem 0">
+<div class="seq-row"><span class="seq-num" style="background:var(--accent3)">1</span><span>User &#x2500;&#x2500;send message&#x2500;&#x2500;&#x25B6; Gateway</span><span class="seq-note">消息输入</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent3)">2</span><span>Gateway &#x2500;&#x2500;route&#x2500;&#x2500;&#x25B6; Session Manager &#x2500;&#x2500;find&#x2500;&#x2500;&#x25B6; Session</span><span class="seq-note">会话路由</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent2)">3</span><span>Gateway &#x2500;&#x2500;request&#x2500;&#x2500;&#x25B6; AIAgent.run()</span><span class="seq-note">交给引擎</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent2)">4</span><span>AIAgent &#x2500;&#x2500;prefetch&#x2500;&#x2500;&#x25B6; Memory &#x2500;&#x2500;return&#x2500;&#x2500;&#x25B6; AIAgent</span><span class="seq-note">记忆预取</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent2)">5</span><span>AIAgent &#x2500;&#x2500;build&#x2500;&#x2500;&#x25B6; PromptBuilder &#x2500;&#x2500;compose&#x2500;&#x2500;&#x25B6; System Prompt</span><span class="seq-note">提示词构建</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--orange)">6</span><span>AIAgent &#x2500;&#x2500;API request&#x2500;&#x2500;&#x25B6; LLM &#x2500;&#x2500;stream response&#x2500;&#x2500;&#x25B6; AIAgent</span><span class="seq-note">模型调用</span></div>
+<div class="seq-row" style="padding-left:1.5rem;border-left:2px dashed var(--orange)"><span class="seq-num" style="background:var(--orange)">7</span><span>LLM &#x2500;&#x2500;tool_call&#x2500;&#x2500;&#x25B6; AIAgent &#x2500;&#x2500;dispatch&#x2500;&#x2500;&#x25B6; Tool Reg &#x2500;&#x2500;execute&#x2500;&#x2500;&#x25B6; Result</span><span class="seq-note">工具循环</span></div>
+<div class="seq-row" style="padding-left:3rem;border-left:2px dashed var(--orange)"><span class="seq-num" style="background:var(--orange)">8</span><span>AIAgent &#x2500;&#x2500;result+history&#x2500;&#x2500;&#x25B6; LLM &#x2500;&#x2500;final response&#x2500;&#x2500;&#x25B6; AIAgent</span><span class="seq-note">再次调用LLM</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent3)">9</span><span>AIAgent &#x2500;&#x2500;store&#x2500;&#x2500;&#x25B6; Memory &#x2500;&#x2500;ack&#x2500;&#x2500;&#x25B6; AIAgent</span><span class="seq-note">记忆存储</span></div>
+<div class="seq-row"><span class="seq-num" style="background:var(--accent3)">10</span><span>AIAgent &#x2500;&#x2500;response&#x2500;&#x2500;&#x25B6; Gateway &#x2500;&#x2500;deliver&#x2500;&#x2500;&#x25B6; User</span><span class="seq-note">响应输出</span></div>
+</div></div>
+</section>
+
+<!-- 7. Integrations -->
+<section class="section" id="integrations">
+<h2 class="section-title">7. 外部集成</h2>
+<p class="section-desc">覆盖消息平台、AI提供商和基础设施。</p>
+<div class="grid-2">
+<div class="card">
+<div class="card-title">&#x1F4AC; 消息平台</div>
+<table style="font-size:.82rem;width:100%">
+<thead><tr><th>平台</th><th>认证</th><th>特性</th></tr></thead>
+<tbody>
+<tr><td><strong>Telegram</strong></td><td><code>TELEGRAM_BOT_TOKEN</code></td><td>群组/频道/文件</td></tr>
+<tr><td><strong>Discord</strong></td><td><code>DISCORD_BOT_TOKEN</code></td><td>DM/公会/线程/语音</td></tr>
+<tr><td><strong>Slack</strong></td><td><code>SLACK_BOT_TOKEN</code></td><td>DM/频道/文件/命令</td></tr>
+<tr><td><strong>WeChat</strong></td><td><code>WECHAT_BOT_TOKEN</code></td><td>群聊/文件助手</td></tr>
+<tr><td><strong>DingTalk</strong></td><td><code>DINGTALK_ACCESS_TOKEN</code></td><td>群聊/机器人</td></tr>
+<tr><td><strong>Feishu</strong></td><td>Webhook</td><td>消息处理</td></tr>
+<tr><td><strong>Mattermost</strong></td><td>Token</td><td>频道/DM</td></tr>
+</tbody>
+</table>
+</div>
+<div class="card">
+<div class="card-title">&#x1F916; LLM提供商</div>
+<table style="font-size:.82rem;width:100%">
+<thead><tr><th>提供商</th><th>模型</th><th>特性</th></tr></thead>
+<tbody>
+<tr><td><strong>OpenRouter</strong></td><td>200+模型</td><td>统一网关</td></tr>
+<tr><td><strong>OpenAI</strong></td><td>GPT-4o/4</td><td>函数调用</td></tr>
+<tr><td><strong>Anthropic</strong></td><td>Claude</td><td>提示缓存</td></tr>
+<tr><td><strong>Google</strong></td><td>Gemini</td><td>多模态</td></tr>
+<tr><td><strong>Ollama</strong></td><td>本地模型</td><td>完全离线</td></tr>
+<tr><td><strong>z.ai/GLM</strong></td><td>GLM系列</td><td>国产模型</td></tr>
+<tr><td><strong>Kimi</strong></td><td>Moonshot</td><td>长文本</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<h3 style="margin-top:2rem;margin-bottom:1rem;font-size:1.1rem">执行后端</h3>
+<div class="grid-4">
+<div class="card"><div class="card-title" style="font-size:.9rem">&#x1F5A5; Local</div><p>直接在本机执行</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem">&#x1F433; Docker</div><p>容器化隔离执行</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem">&#x1F52E; Singularity</div><p>HPC环境</p></div>
+<div class="card"><div class="card-title" style="font-size:.9rem">&#x2601; Modal/Daytona</div><p>云端无服务器</p></div>
+</div>
+</section>
+
+<!-- 8. Skills -->
+<section class="section" id="skills">
+<h2 class="section-title">8. 技能生态系统</h2>
+<p class="section-desc">100+预构建技能覆盖40+领域，通过Skills Hub搜索、安装和更新。</p>
+<div class="grid-3">
+<div class="card"><div class="card-title">&#x1F4BB; 软件开发</div><p>GitHub PR、代码审查、TDD、系统化调试</p></div>
+<div class="card"><div class="card-title">&#x1F3A8; 创意设计</div><p>架构图、ASCII Art、Excalidraw、音乐生成</p></div>
+<div class="card"><div class="card-title">&#x1F4CB; 生产力</div><p>Notion、Linear、Google Workspace、PPT、OCR</p></div>
+<div class="card"><div class="card-title">&#x1F52C; 研究分析</div><p>ArXiv论文、博客监控、研究论文写作</p></div>
+<div class="card"><div class="card-title">&#x1F680; DevOps</div><p>Webhook、云服务集成、部署自动化</p></div>
+<div class="card"><div class="card-title">&#x1F3AC; 媒体内容</div><p>GIF搜索、YouTube内容处理</p></div>
+<div class="card"><div class="card-title">&#x1F4F1; 社交媒体</div><p>Xitter (Twitter) 集成</p></div>
+<div class="card"><div class="card-title">&#x1F3E0; 智能家居</div><p>OpenHue灯光控制、IoT</p></div>
+<div class="card"><div class="card-title">&#x1F34E; Apple生态</div><p>iMessage、Notes、Reminders、Find My</p></div>
+<div class="card"><div class="card-title">&#x1F9E0; MLOps</div><p>模型训练、推理、向量数据库</p></div>
+<div class="card"><div class="card-title">&#x1F3AE; 游戏</div><p>游戏辅助、互动娱乐</p></div>
+<div class="card"><div class="card-title">&#x1F527; 工具集</div><p>自定义工具创建、工作流自动化</p></div>
+</div>
+</section>
+
+<!-- 9. Usage -->
+<section class="section" id="usage">
+<h2 class="section-title">9. 使用说明</h2>
+<p class="section-desc">从安装到日常使用的完整指南。</p>
+
+<details open>
+<summary>&#x1F4E6; 安装部署</summary>
+<div class="detail-body">
+<h4 style="margin-bottom:.5rem">方式一：一键安装</h4>
+<div class="pre-wrap"><code><span class="comment"># macOS / Linux</span>
+curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+
+<span class="comment"># Windows (PowerShell)</span>
+iex (Invoke-RestMethod https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)</code></div>
+<h4 style="margin:1rem 0 .5rem">方式二：开发者安装</h4>
+<div class="pre-wrap"><code>git clone https://github.com/NousResearch/hermes-agent.git
+cd hermes-agent
+uv venv venv --python 3.11
+source venv/bin/activate
+uv pip install -e ".[all,dev]"</code></div>
+<h4 style="margin:1rem 0 .5rem">方式三：Docker</h4>
+<div class="pre-wrap"><code>docker build -t hermes-agent .
+docker run -it --rm -v ~/.hermes:/root/.hermes -e OPENAI_API_KEY=your-key hermes-agent</code></div>
+</div>
+</details>
+
+<details>
+<summary>&#x2699;&#xFE0F; 初始配置</summary>
+<div class="detail-body">
+<h4 style="margin-bottom:.5rem">交互式配置向导</h4>
+<div class="pre-wrap"><code>hermes setup
+<span class="comment"># 将引导设置：</span>
+<span class="comment"># 1. 模型和提供商  2. 终端执行后端  3. Agent参数</span>
+<span class="comment"># 4. 消息平台  5. 工具配置</span></code></div>
+<h4 style="margin:1rem 0 .5rem">手动配置</h4>
+<div class="pre-wrap"><code>vim ~/.hermes/config.yaml
+vim ~/.hermes/.env
+<span class="comment"># .env 示例：</span>
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+TELEGRAM_BOT_TOKEN=...</code></div>
+</div>
+</details>
+
+<details>
+<summary>&#x1F4AC; 基本使用</summary>
+<div class="detail-body">
+<h4 style="margin-bottom:.5rem">CLI模式</h4>
+<div class="pre-wrap"><code><span class="comment"># 交互式对话</span>
+hermes
+<span class="comment"># 单条消息</span>
+hermes "解释量子计算"
+<span class="comment"># 指定模型</span>
+hermes --model claude-sonnet "Hello"</code></div>
+<h4 style="margin:1rem 0 .5rem">Gateway模式</h4>
+<div class="pre-wrap"><code>hermes gateway start   <span class="comment"># 启动</span>
+hermes gateway status  <span class="comment"># 状态</span>
+hermes gateway stop    <span class="comment"># 停止</span></code></div>
+<h4 style="margin:1rem 0 .5rem">Web Dashboard</h4>
+<div class="pre-wrap"><code>hermes web
+<span class="comment"># 浏览器访问 http://localhost:8000</span></code></div>
+</div>
+</details>
+
+<details>
+<summary>&#x1F4DD; 常用斜杠命令</summary>
+<div class="detail-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>命令</th><th>功能</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>/new</code></td><td>新建会话</td><td>清除历史开始新对话</td></tr>
+<tr><td><code>/model</code></td><td>切换模型</td><td>切换LLM模型</td></tr>
+<tr><td><code>/config</code></td><td>配置管理</td><td>运行时配置查看/修改</td></tr>
+<tr><td><code>/toolset</code></td><td>工具集</td><td>启用/禁用工具集</td></tr>
+<tr><td><code>/skills</code></td><td>技能管理</td><td>列出/搜索/安装技能</td></tr>
+<tr><td><code>/cron</code></td><td>定时任务</td><td>管理定时任务</td></tr>
+<tr><td><code>/compress</code></td><td>手动压缩</td><td>压缩当前上下文</td></tr>
+<tr><td><code>/retry</code></td><td>重试</td><td>重新生成回复</td></tr>
+<tr><td><code>/undo</code></td><td>撤销</td><td>撤销上一轮对话</td></tr>
+<tr><td><code>/agent</code></td><td>子Agent</td><td>生成/管理子Agent</td></tr>
+<tr><td><code>/background</code></td><td>后台任务</td><td>查看后台任务</td></tr>
+<tr><td><code>/save</code></td><td>保存会话</td><td>保存当前对话</td></tr>
+<tr><td><code>/history</code></td><td>历史记录</td><td>查看对话历史</td></tr>
+<tr><td><code>/clear</code></td><td>清屏</td><td>清除终端显示</td></tr>
+</tbody>
+</table>
+</div></div>
+</details>
+
+<details>
+<summary>&#x1F50C; 插件开发指南</summary>
+<div class="detail-body">
+<div class="pre-wrap"><code><span class="comment"># 1. 创建插件目录</span>
+mkdir -p ~/.hermes/plugins/my-plugin
+
+<span class="comment"># 2. 创建 plugin.yaml</span>
+<span class="keyword">cat</span> &gt; ~/.hermes/plugins/my-plugin/plugin.yaml &lt;&lt;'EOF'
+name: my-plugin
+version: "1.0.0"
+description: "自定义插件"
+author: "Author"
+pip_dependencies: []
+requires_env: []
+hooks: []
+EOF
+
+<span class="comment"># 3. 创建 __init__.py</span>
+<span class="keyword">cat</span> &gt; ~/.hermes/plugins/my-plugin/__init__.py &lt;&lt;'EOF'
+def register(ctx):
+    ctx.register_tool(
+        name="my_tool",
+        schema={"type":"object","properties":{"input":{"type":"string"}}},
+        handler=lambda args: f"Result: {args['input']}",
+    )
+    ctx.register_hook("on_session_start", on_start)
+
+async def on_start(session):
+    print(f"Session: {session.id}")
+EOF</code></div>
+</div>
+</details>
+</section>
+
+<!-- 10. Config Reference -->
+<section class="section" id="config">
+<h2 class="section-title">10. 配置参考</h2>
+<p class="section-desc">完整的 <code>~/.hermes/config.yaml</code> 配置项说明。</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>配置项</th><th>默认值</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>model.provider</code></td><td>""</td><td>LLM提供商 (openai/anthropic/gemini/openrouter/ollama)</td></tr>
+<tr><td><code>model.base_url</code></td><td>""</td><td>API基础URL（自托管时需要）</td></tr>
+<tr><td><code>model.model</code></td><td>""</td><td>模型名称</td></tr>
+<tr><td><code>agent.max_turns</code></td><td>90</td><td>最大对话轮次</td></tr>
+<tr><td><code>agent.tool_use</code></td><td>"auto"</td><td>工具使用模式 (auto/required/none)</td></tr>
+<tr><td><code>agent.gateway_timeout</code></td><td>1800</td><td>网关超时（秒）</td></tr>
+<tr><td><code>terminal.backend</code></td><td>"local"</td><td>终端后端 (local/docker/singularity/modal/daytona)</td></tr>
+<tr><td><code>browser.inactivity_timeout</code></td><td>120</td><td>浏览器不活跃超时（秒）</td></tr>
+<tr><td><code>filesystem.checkpoints</code></td><td>true</td><td>是否启用文件系统检查点</td></tr>
+<tr><td><code>filesystem.max_snapshots</code></td><td>50</td><td>最大检查点快照数</td></tr>
+<tr><td><code>compression.enabled</code></td><td>true</td><td>自动上下文压缩</td></tr>
+<tr><td><code>memory.provider</code></td><td>"holographic"</td><td>记忆后端插件</td></tr>
+<tr><td><code>session.reset_policy</code></td><td>"daily"</td><td>会话重置策略 (daily/idle/both/none)</td></tr>
+<tr><td><code>context.engine</code></td><td>"compressor"</td><td>上下文引擎 (compressor/lcm/自定义)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 style="margin-top:2rem;margin-bottom:1rem;font-size:1.1rem">环境变量</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>变量</th><th>用途</th><th>必填</th></tr></thead>
+<tbody>
+<tr><td><code>OPENAI_API_KEY</code></td><td>OpenAI / OpenRouter认证</td><td><span class="badge orange">视提供商</span></td></tr>
+<tr><td><code>ANTHROPIC_API_KEY</code></td><td>Anthropic Claude认证</td><td><span class="badge orange">视提供商</span></td></tr>
+<tr><td><code>GEMINI_API_KEY</code></td><td>Google Gemini认证</td><td><span class="badge orange">视提供商</span></td></tr>
+<tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Telegram Bot</td><td><span class="badge red">Gateway</span></td></tr>
+<tr><td><code>DISCORD_BOT_TOKEN</code></td><td>Discord Bot</td><td><span class="badge red">Gateway</span></td></tr>
+<tr><td><code>SLACK_BOT_TOKEN</code></td><td>Slack Bot</td><td><span class="badge red">Gateway</span></td></tr>
+<tr><td><code>HERMES_HOME</code></td><td>配置目录路径</td><td><span class="badge green">可选</span></td></tr>
+<tr><td><code>TERMINAL_ENV</code></td><td>终端执行环境</td><td><span class="badge green">可选</span></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<div class="footer">
+<p>Hermes Agent 项目全景文档 &middot; 由代码分析自动生成</p>
+<p style="margin-top:.5rem">Nous Research &middot; GitHub &middot; Docs</p>
+</div>
+
+</div>
+
+<script>
+function switchTab(e,id){var c=e.target.closest('.section');c.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});c.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active')});e.target.classList.add('active');document.getElementById(id).classList.add('active')}
+var sections=document.querySelectorAll('.section'),navLinks=document.querySelectorAll('.nav-links a');
+function updateNav(){var current='';sections.forEach(function(s){if(window.scrollY>=s.offsetTop-100)current=s.id});navLinks.forEach(function(a){a.classList.remove('active');if(a.getAttribute('href')==='#'+current)a.classList.add('active')})}
+window.addEventListener('scroll',updateNav,{passive:true});updateNav();
+</script>
+</body>
+</html>
