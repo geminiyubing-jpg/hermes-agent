@@ -110,7 +110,11 @@ from gateway.platforms.base import (
     cache_audio_from_bytes,
     cache_image_from_bytes,
 )
-from gateway.status import acquire_scoped_lock as _acquire_scoped_lock_impl, release_scoped_lock as _release_scoped_lock_impl
+from gateway.status import acquire_scoped_lock as _acquire_scoped_lock_impl
+try:  # upstream split release into gateway.status_scoped_locks (861a0299edf)
+    from gateway.status_scoped_locks import release_scoped_lock as _release_scoped_lock_impl
+except ImportError:  # pre-split fallback
+    from gateway.status import release_scoped_lock as _release_scoped_lock_impl
 import sys as _sys
 from hermes_constants import get_hermes_home
 
