@@ -63,6 +63,20 @@ class TestResolveTarget(unittest.TestCase):
 class TestHandleCallbackRouting(unittest.TestCase):
     """Tests for handle_callback routing to approve/modify/reject."""
 
+    def setUp(self):
+        # self_evolution.paths hardcodes Path.home() at import time; redirect the
+        # db module's path constants to a temp dir so the home_io_guard stays happy.
+        import tempfile
+        from pathlib import Path as _Path
+        tmp = _Path(tempfile.mkdtemp(prefix="se_test_"))
+        import self_evolution.db as _se_db
+        _se_db._local.conn = None  # drop any cached connection from a prior test
+        for p in (patch.object(_se_db, "DB_DIR", tmp),
+                  patch.object(_se_db, "DB_PATH", tmp / "evolution.db")):
+            p.start()
+            self.addCleanup(p.stop)
+        _se_db.init_db()  # fresh temp db needs its schema
+
     @patch.object(FeishuNotifier, "_approve")
     def test_approve_action_routes_correctly(self, mock_approve):
         notifier = FeishuNotifier()
@@ -94,7 +108,7 @@ class TestClientCaching(unittest.TestCase):
     def test_client_created_once_and_cached(self):
         notifier = FeishuNotifier()
         mock_client = SimpleNamespace()
-        with patch("self_evolution.feishu_notifier.FeishuNotifier._get_client", return_value=mock_client) as mock_get:
+        with patch("self_evolution.feishu_notifier.FeishuNotifier._get_client", return_value=mock_client):
             # First call
             notifier._client = None
             notifier._client = mock_client
