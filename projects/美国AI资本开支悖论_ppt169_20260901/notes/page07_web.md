@@ -1,1 +1,0 @@
-$46B直接股权+$879B多年采购承诺网络。关键承诺：Oracle→OpenAI $300B、MSFT→OpenAI $250B、OpenAI→AMD $90B、Nv→OpenAI ≤$100B(LOI)。可怕面：MSFT AI收入70%依赖OpenAI、AWS 59-73%来自两Labs。不可怕面：股权损失封顶不入营收+第三方资本。与Qwest互换造假本质不同。

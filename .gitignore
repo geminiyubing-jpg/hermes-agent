@@ -333,3 +333,30 @@ native/fts5_cjk/*.so
 /pm/.lock.json.lock
 
 apps/desktop/.dist-build*
+
+# ==== Local content artifacts: untracked 2026-11-03, kept on disk ====
+/projects/
+/剧本杀/
+/hf-react-demo/
+/vscode-extension/
+/deliverables/
+/.tmp_rmb_research/
+/_tmp_stories.json
+/ai_history_facts.json
+/andy_coldfacts_30.json
+/bili_hot_topics.py
+/bili_search_evidence.json
+/code_stats.py
+/count_lines.py
+/ep0*_draft.txt
+/ep0*_draft.json
+/ep0*_final.json
+/ep2*_run.log
+/france_travel.js
+/kaki_ref.wav
+/new_live_zenggong.jpg
+/sanguo_sui_stories.json
+/songyuan_mingqing_stories.json
+/us_derivatives_research.json
+/venv_manifest_backup_20260929.txt
+/探索法国.pptx

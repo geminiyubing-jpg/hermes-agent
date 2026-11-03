@@ -1,1 +1,0 @@
-五家分账表：Amazon 1318→2200(+67%)AWS+37% backlog$496B vs FCF-$7.6B；Alphabet 914→1950-2050(+117%) Cloud+82% vs FCF-$5.9B首次转负；Microsoft ~1006→~1750(+74%) RPO$678B vs 折旧15→25年争议；Meta 722→1300-1450(+90%) vs FCF剩$784M跌10%；Oracle 212→557→950 RPO$638B vs BBB-/CDS200bp。三种体质：印钞机透支/押上全部身家/借壳赌命。

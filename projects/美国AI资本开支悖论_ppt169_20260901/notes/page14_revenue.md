@@ -1,1 +1,0 @@
-柱对比：capex $730B vs 全行业AI收入~$65B vs 剔除循环终端需求$30-50B。11-24x差距。收入侧真数据：MSFT AI ARR $37B(+123%)、Copilot 15M席位、OpenAI $25B、Anthropic $65B(合计亏>$24B)。结构问题：MSFT 70%依赖OpenAI、AWS 59-73%来自两Labs、VC输血创业公司消费=资本市场给自己发收入。Allianz发散度46%>2001的32%。

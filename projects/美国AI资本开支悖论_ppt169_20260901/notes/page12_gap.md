@@ -1,1 +1,0 @@
-追赶曲线：GPT-3.5(2022)→Kimi K3(2026)差距≈月级。四硬证据：基准(K3近乎追平Anthropic最强/Vals Index)、用量(OpenRouter 20T tokens/周中国模型18个月从零到多数/Qwen全球下载第一)、价格(DeepSeek 1/40成本)、管制反效果(MoE/蒸馏创新+USCC工业数据飞轮)。反方：Semi Fundamental称基准下真实差距反而拉大。裁决：能力"接近"已共识——对capex论已足够致命。
