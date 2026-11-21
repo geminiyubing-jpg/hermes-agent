@@ -20,8 +20,6 @@ _KEEPALIVE_RPC_TIMEOUT = 30.0
 class MCPServerHealthMixin:
     """Methods of :class:`tools.mcp_tool.MCPServerTask` (mixed in; relies on its attributes)."""
 
-    __slots__ = ()
-
     def _is_http(self) -> bool:
         return "url" in self._config
 
@@ -214,6 +212,7 @@ class MCPServerHealthMixin:
         self._session_proven = True
         self._reconnect_retries = 0
         self._park_reason = None
+        self._parked_probe_failures = 0
         if self._was_parked:
             self._was_parked = False
             logger.warning("MCP server '%s': revived — session healthy again after "

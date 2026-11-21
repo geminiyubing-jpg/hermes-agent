@@ -180,9 +180,9 @@ def _eager_reconcile_own_session_db() -> None:
     """Bring this process's own state.db schema current at startup — read-only first.
 
     The dashboard is a view layer; the gateway owns the writer. A healthy store
-    must never see a second writable ``SessionDB`` from this process (its
-    close-time checkpoint and a possible FTS rebuild in ``_init_fts`` are the
-    two-writer corruption vector, #107688 / #100896). Access-mode semantics
+    must never see a second writer from this process (its close-time checkpoint
+    and a possible FTS rebuild are the two-writer corruption vector, #107688 /
+    #100896). Access-mode semantics
     (no bootstrap of a missing store; one additive catch-up of a store that lags
     SCHEMA_SQL, only while no gateway owns it, #79531 / #140315) live in the routers' own-store opener,
     :func:`hermes_cli.web_server_sessions._open_session_db_at_path`. Never
@@ -190,9 +190,8 @@ def _eager_reconcile_own_session_db() -> None:
     """
     try:
         from hermes_cli.web_server_sessions import _open_session_db_for_profile
-        from hermes_state_registry import release_or_close
 
-        release_or_close(_open_session_db_for_profile(None, read_only=True))
+        _open_session_db_for_profile(None, read_only=True).close()
     except Exception as exc:
         _log.warning(
             "startup schema reconcile of state.db failed (%s); session "
@@ -455,9 +454,21 @@ def _write_machine_sentinel_line(line: str) -> None:
             pass
 
 
-def _report_port_in_use(host: str, port: int) -> None:
-    """Print the machine sentinel + a human hint naming likely holders."""
+def _report_port_in_use(host: str, port: int, *, headless: Optional[bool] = None) -> int:
+    """Print the machine sentinel + a human hint naming the holder; return the exit code.
+
+    The sentinel line is always first. When this home's gateway holds the address (proved by the
+    gateway itself and its live listener, ``web_server_port_holder``) the hint says so and the code is EX_CONFIG: a
+    retry never frees the port, so a supervisor should stop. Anything else keeps the generic
+    hint and :data:`PORT_IN_USE_EXIT_CODE`."""
+    from gateway.restart import GATEWAY_FATAL_CONFIG_EXIT_CODE
+    from hermes_cli.web_server_port_holder import describe_gateway_holder, gateway_holding_port
+
     _write_machine_sentinel_line(_PORT_IN_USE_SENTINEL.format(port=port))
+    holder = gateway_holding_port(port, host=host)
+    if holder is not None:
+        print("\n".join(describe_gateway_holder(holder, host, port, headless=headless)), flush=True)
+        return GATEWAY_FATAL_CONFIG_EXIT_CODE
     print(
         f"  Port {port} on {host} is already in use — likely another "
         "'hermes serve' / 'hermes dashboard' backend or the Hermes gateway. "
@@ -465,6 +476,7 @@ def _report_port_in_use(host: str, port: int) -> None:
         "(--port 0 picks a free ephemeral port).",
         flush=True,
     )
+    return PORT_IN_USE_EXIT_CODE
 
 
 _DEFAULT_DASHBOARD_FORWARDED_ALLOW_IPS = ("127.0.0.1", "::1")

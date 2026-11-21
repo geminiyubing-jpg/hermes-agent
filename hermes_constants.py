@@ -4,6 +4,7 @@ Import-safe, stdlib-only — importable from anywhere without circular-import ri
 """
 
 import contextlib
+import errno
 import os
 import re
 import shutil
@@ -460,26 +461,57 @@ def clear_named_profile_deleted(profile_home: str | Path) -> None:
     profile_tombstone_path(Path(profile_home)).unlink(missing_ok=True)
 
 
-def assert_named_profile_home_live(path: str | Path) -> None:
-    """Refuse missing or tombstoned named profile homes."""
+def assert_named_profile_home_live(path: str | Path) -> Path | None:
+    """Refuse missing or tombstoned named profile homes; return the named home owning *path*
+    (``None`` for a default or custom home), so a caller acting on it never classifies twice."""
     home = named_profile_home(path)
     if home is not None and (named_profile_is_deleted(home) or not home.exists()):
         raise FileNotFoundError(
             f"Named profile home does not exist: {home}. "
             "Create the profile explicitly before using it."
         )
+    return home
 
 
 def mkdir_under_hermes_home(path: str | Path) -> Path:
-    """Create *path*, but never materialize a deleted/missing named profile."""
+    """Create *path*, but never materialize a deleted/missing named profile.
+
+    A named home is never created, even when a delete or rename lands after the liveness check:
+    a descendant then raises ``FileNotFoundError``, and the home as *path* is left missing for the
+    caller's write to fail. Default and custom homes keep ``parents=True``.
+    """
     target = Path(path)
-    assert_named_profile_home_live(target)
+    home = assert_named_profile_home_live(target)
     # Lazy so this module still imports alone; hermes_dir_acl (stdlib only) ships beside it in every
     # closure that creates home dirs, and a missing copy fails loudly instead of silently skipping the
     # elevated grant (tests/pm/test_bootstrap_import_closure.py).
-    from hermes_dir_acl import make_user_dir
-    make_user_dir(target, parents=True, exist_ok=True)
+    from hermes_dir_acl import make_user_dir, repair_user_dir
+    if home is None:
+        make_user_dir(target, parents=True, exist_ok=True)
+    elif target != home:
+        _mkdir_below_home(home, target)
+    else:
+        try:
+            is_dir = stat.S_ISDIR(home.stat().st_mode)
+        except FileNotFoundError:
+            return target
+        if not is_dir:
+            raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), str(home))
+        repair_user_dir(home)
     return target
+
+
+def _mkdir_below_home(home: Path, path: Path) -> None:
+    """Create *path* leaf first, its missing parents likewise, never *home* itself."""
+    from hermes_dir_acl import make_user_dir
+    try:
+        make_user_dir(path, exist_ok=True)
+    except FileNotFoundError:
+        if path.parent == home:
+            raise
+        _mkdir_below_home(home, path.parent)
+        if path.name != "..":  # ``missing/..`` is the dir this walk just reached, already handled
+            make_user_dir(path, exist_ok=True)
 
 
 def _packaged_dir(env_var: str, default: Path | None, subdir: str) -> Path:
@@ -867,11 +899,14 @@ def socket_safe_tmpdir() -> str:
 # would void administrator policy at a directory the user controls (#135200); ``HERMES_HOME``
 # moves identity, policy and plugin scope wholesale — one write to ``~/.hermes/.env`` would
 # otherwise relocate SOUL.md, config.yaml, plugins, skills and cron on the next start (#144685).
+# ``GATEWAY_STATUS_REPORT_URL`` turns on gateway status reports to a URL the hosting deployment
+# chose (``gateway/status_report``): the launch stamp is its opt-in, so no user-writable layer may
+# turn reports on or point them somewhere else.
 # Skipped by ``hermes_cli.env_loader._load_dotenv_with_fallback``,
 # ``hermes_cli.config.reload_env``, ``agent.secret_sources.registry.apply_all`` (reported as
 # ``skipped_protected``) and ``onepassword.apply_onepassword_secrets``; refused by the ``.env``
 # writers (``validate_env_var_name_for_write``) and never mirrored by ``_publish_env_value``.
-LAUNCH_ONLY_ENV_KEYS = frozenset({"HERMES_MANAGED_DIR", "HERMES_HOME"})
+LAUNCH_ONLY_ENV_KEYS = frozenset({"HERMES_MANAGED_DIR", "HERMES_HOME", "GATEWAY_STATUS_REPORT_URL"})
 
 
 def is_launch_only_env_key(name: str) -> bool:

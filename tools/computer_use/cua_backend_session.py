@@ -263,7 +263,7 @@ class _CuaDriverSession:
     # safe from the bridge-loop thread without taking self._lock (which stop() may hold while awaiting this
     # coro's future). See #55048 Bug 1.
     async def _populate_capabilities(self, session: Any) -> None:
-        """Cache per-tool capability sets, input schemas from tools/list. Soft
+        """Cache per-tool capability sets and input schemas from tools/list. Soft
         prerequisite: on failure the map stays empty (capability False)."""
         self._capabilities, self._tool_schemas = {}, {}
         try:
@@ -368,6 +368,28 @@ class _CuaDriverSession:
         schema = getattr(self, "_tool_schemas", {}).get(tool, {})
         properties = schema.get("properties") if isinstance(schema, dict) else None
         return isinstance(properties, dict) and property_name in properties
+
+    def supports_input_value(self, tool: str, property_name: str, value: Any) -> bool:
+        """Validate a value against the live property schema, never fetching remote refs.
+
+        jsonschema ships with MCP; missing/invalid schemas or an unavailable validator fail closed.
+        Property presence alone is insufficient for enums such as get_window_state.tree_format.
+        """
+        if not self.supports_input_property(tool, property_name):
+            return False
+        schema = self._tool_schemas[tool]
+        try:
+            from jsonschema.validators import validator_for
+            from referencing import Registry
+
+            validator = validator_for(schema)
+            validator.check_schema(schema)
+            return validator(schema, registry=Registry()).evolve(
+                schema=schema["properties"][property_name]).is_valid(value)
+        except Exception:
+            logger.debug("cua-driver input value schema validation failed for %s.%s", tool, property_name,
+                         exc_info=True)
+            return False
 
     @property
     def capabilities_discovered(self) -> bool:
